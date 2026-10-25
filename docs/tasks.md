@@ -52,6 +52,9 @@
 - [x] **T12. Personality stage** (4 min) — FR10, diagram
   `PersonalityStage` after the output guardrail; fact-preservation check; config switch. *Done when:* unit tests cover rewrite, fact loss and failure; integration test shows `personality` in `agents`.
 
+- [x] **T13. Local LLM provider** (bonus) — plan §12
+  `OllamaClient` adapter, `capabilities` on `LLMClient`, local DuckDuckGo `web_search` tool, compose profile `local`. *Done when:* unit tests cover the adapter mapping, emulated forced tool choice and the search tool; `docker compose --profile local up` answers without a key.
+
 ## Bonus (in order — drop from the bottom)
 
 - [x] **B1. Guardrails** — spec §7: input injection/other-user checks, PII masking in logs, output source check. *Done when:* N1 → blocked; a unit test proves masking.

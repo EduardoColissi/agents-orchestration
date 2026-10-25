@@ -6,7 +6,7 @@ Built with **Spec-Driven Development**: [`docs/spec.md`](docs/spec.md) (what/why
 
 **Stack:** Node 22 · TypeScript (strict) · Fastify · zod · Anthropic SDK (Claude + server-side web search) · transformers.js (local multilingual embeddings) · cheerio · pino · Vitest · Docker.
 
-Only one secret is needed: `ANTHROPIC_API_KEY`.
+Only one secret is needed: `ANTHROPIC_API_KEY` — or none at all with the **local profile**, which runs a free open model (Ollama + qwen2.5:7b) inside Docker.
 
 ---
 
@@ -30,6 +30,14 @@ npm install && npm run ingest     # build data/index.json on the host (or skip i
 docker compose up --build         # the embedding model is cached in the image at build time
 ```
 
+### Without any API key (local LLM)
+
+```bash
+docker compose --profile local up --build
+```
+
+This starts three containers: `ollama` (model server), `ollama-pull` (downloads `qwen2.5:7b`, ~4.7 GB, once — cached in a volume) and `api-local` (this service with `LLM_PROVIDER=ollama`). Needs ~8 GB of free RAM; on CPU each request takes 20–60 s, and routing/tool-calling quality is below Claude's. Pick another model with `OLLAMA_MODEL=llama3.1:8b` (or `qwen2.5:3b` for small machines). The Anthropic server-side web search is replaced by a local DuckDuckGo tool, so the weather/exchange-rate scenarios still work. Same code, same tests: the provider is just another adapter behind `LLMClient`.
+
 To refresh the index from inside the container instead: `docker compose run --rm --user root api npm run ingest:prod` (writes to the mounted `./data`; on Linux the file ends up owned by root).
 
 Commit `data/index.json` after ingesting: it is a snapshot, so the API (and the container) starts without network access to Getnet. Re-run ingestion to refresh it. Without an index the API still starts and logs a warning; Getnet questions then end in an honest "not found" + handoff.
@@ -47,7 +55,9 @@ EVAL_BASE_URL=http://localhost:3000 npm run eval   # same, against a running ser
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | — | Required |
+| `LLM_PROVIDER` | `anthropic` | `anthropic` (Claude API) or `ollama` (free local model) |
+| `ANTHROPIC_API_KEY` | — | Required for `anthropic` |
+| `OLLAMA_URL` / `OLLAMA_MODEL` | `http://localhost:11434` / `qwen2.5:7b` | For `ollama` (all roles use this one model) |
 | `ROUTER_MODEL` | `claude-haiku-5-5` | Cheap, fast classification |
 | `AGENT_MODEL` | `claude-sonnet-5-5` | Knowledge and Support agents |
 | `PERSONALITY_ENABLED` / `PERSONALITY_MODEL` | `true` / `claude-haiku-5-5` | Brand-voice stage on every answer |
@@ -142,7 +152,7 @@ flowchart TD
 |---|---|---|
 | **Mediator** | `orchestrator.ts` | Agents never call each other; the orchestrator passes results forward through `AgentContext`. Low coupling between agents. |
 | **Strategy** | `Agent` (knowledge/support), `Embedder` (e5/hashing), `LLMClient` | Behaviour picked at runtime: by the Router's plan or by configuration. |
-| **Adapter** | `llm/anthropic.ts` | Wraps the Anthropic SDK behind `LLMClient`; changing provider = one new adapter. |
+| **Adapter** | `llm/anthropic.ts`, `llm/ollama.ts` | Each provider is one adapter behind `LLMClient`; `capabilities` tells agents what the provider lacks (e.g. no server-side search → local DuckDuckGo tool). |
 | **Repository** | `support/repository.ts`, `mockRepository.ts` | Data access isolated from tools; the mock becomes a real Getnet API by adding an implementation. |
 | **Factory** | `defineTool`, `createSupportTools`, `createKnowledgeBaseTool`, `createEmbedder` | `defineTool` builds a tool from one zod schema that produces the model-facing JSON Schema *and* validates the model's input. |
 | **Decorator** | `agents/support.ts` wraps `create_support_ticket` | Captures the ticket id without changing the tool. |
@@ -238,8 +248,8 @@ How to make integration testing comprehensive for the orchestration: test the **
 ```
 src/
   main.ts  server.ts  container.ts  orchestrator.ts  config.ts  types.ts
-  agents/       router.ts knowledge.ts support.ts escalation.ts personality.ts toolLoop.ts defineTool.ts prompts.ts
-  llm/          client.ts (interface) anthropic.ts fake.ts
+  agents/       router.ts knowledge.ts support.ts escalation.ts personality.ts toolLoop.ts defineTool.ts webSearchTool.ts prompts.ts
+  llm/          client.ts (interface) anthropic.ts ollama.ts fake.ts
   rag/          ingest.ts crawler.ts chunker.ts embedder.ts vectorStore.ts retriever.ts
   support/      repository.ts (interface) mockRepository.ts tools.ts dates.ts
   guardrails/   input.ts output.ts pii.ts language.ts

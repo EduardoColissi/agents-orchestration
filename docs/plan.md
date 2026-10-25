@@ -166,3 +166,4 @@ Future work for the README: LLM-as-judge for groundedness, a regression gate on 
 | — | `data/knowledge/support-playbook.md` (synthetic, clearly labelled) ingested with the web pages | The Getnet site has no troubleshooting content; models the "internal" source the challenge mentions |
 | — | Agent exceptions → Escalation instead of HTTP 500 | Graceful degradation during LLM outages; 500 is kept for bugs outside the agents |
 | Index snapshot committed | The snapshot must be produced by `npm run ingest` on a machine with internet access and committed | The build sandbox could not reach getnet.net / Hugging Face |
+| — | `LLM_PROVIDER=ollama` + compose profile `local` (Ollama + qwen2.5:7b, DuckDuckGo tool for web search) | Lets the evaluator run everything with no API key; proves the provider abstraction. Trade-off: slower and weaker routing than Claude, so Claude stays the default |
