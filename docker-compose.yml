@@ -1,0 +1,14 @@
+services:
+  api:
+    build: .
+    image: getnet-multi-agent:latest
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      PORT: 3000
+    volumes:
+      # Lets `docker compose run --rm api npm run ingest:prod` refresh the index on the host.
+      - ./data:/app/data
+    restart: unless-stopped

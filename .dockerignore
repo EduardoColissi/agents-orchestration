@@ -1,0 +1,9 @@
+node_modules
+dist
+.models
+.env
+.git
+tests
+docs
+eval-report.json
+*.log
