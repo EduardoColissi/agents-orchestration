@@ -1,0 +1,61 @@
+{
+  "_comment": "Synthetic merchants for the challenge. Dates are relative to 'today' (days_ago) and materialized at load time, so scenarios like 'yesterday's sales' always work.",
+  "customers": [
+    {
+      "user_id": "cliente1988",
+      "business_name": "Padaria Pão Dourado",
+      "document": "12.***.***/0001-88",
+      "segment": "Bakery",
+      "city": "Porto Alegre - RS",
+      "plan": "Get Smart - Receba em 1 dia útil",
+      "settlement_policy": { "debit_business_days": 1, "credit_business_days": 1, "pix_business_days": 0 },
+      "bank_account": "Santander • Ag 1234 • CC ****-5",
+      "terminals": [
+        {
+          "serial": "GS-1988-0001",
+          "model": "Get Smart",
+          "status": "offline",
+          "last_seen_hours_ago": 3,
+          "firmware": "5.2.1",
+          "battery_pct": 64,
+          "connectivity": { "wifi": "configured (network 'PaoDourado'), no signal since last restart", "chip_4g": "active, data plan included", "last_error": "NETWORK_UNREACHABLE" }
+        }
+      ],
+      "transactions": [
+        { "id": "TX-1001", "days_ago": 1, "time": "08:14", "amount": 42.5, "method": "debit", "brand": "Visa", "installments": 1, "status": "approved" },
+        { "id": "TX-1002", "days_ago": 1, "time": "09:37", "amount": 128.9, "method": "credit", "brand": "Mastercard", "installments": 1, "status": "approved" },
+        { "id": "TX-1003", "days_ago": 1, "time": "11:02", "amount": 310.0, "method": "credit", "brand": "Elo", "installments": 3, "status": "approved" },
+        { "id": "TX-1004", "days_ago": 1, "time": "12:20", "amount": 27.0, "method": "pix", "brand": "Pix", "installments": 1, "status": "approved" },
+        { "id": "TX-1005", "days_ago": 1, "time": "16:45", "amount": 89.9, "method": "credit", "brand": "Visa", "installments": 1, "status": "declined", "decline_code": "51" },
+        { "id": "TX-1006", "days_ago": 0, "time": "07:58", "amount": 15.5, "method": "debit", "brand": "Elo", "installments": 1, "status": "approved" },
+        { "id": "TX-1007", "days_ago": 0, "time": "08:31", "amount": 230.0, "method": "credit", "brand": "Mastercard", "installments": 2, "status": "declined", "decline_code": "05" },
+        { "id": "TX-1008", "days_ago": 2, "time": "10:10", "amount": 76.4, "method": "debit", "brand": "Mastercard", "installments": 1, "status": "approved" },
+        { "id": "TX-1009", "days_ago": 3, "time": "15:22", "amount": 199.0, "method": "credit", "brand": "Visa", "installments": 1, "status": "approved" }
+      ]
+    },
+    {
+      "user_id": "cliente2000",
+      "business_name": "Mercado Bairro Alto",
+      "document": "98.***.***/0001-10",
+      "segment": "Grocery",
+      "city": "Canoas - RS",
+      "plan": "Get Clássica - Receba em 30 dias",
+      "settlement_policy": { "debit_business_days": 1, "credit_business_days": 30, "pix_business_days": 0 },
+      "bank_account": "Santander • Ag 4321 • CC ****-1",
+      "terminals": [
+        {
+          "serial": "GC-2000-0001",
+          "model": "Get Clássica",
+          "status": "online",
+          "last_seen_hours_ago": 0,
+          "firmware": "3.8.0",
+          "battery_pct": 91,
+          "connectivity": { "wifi": "not configured", "chip_4g": "active, good signal", "last_error": null }
+        }
+      ],
+      "transactions": [
+        { "id": "TX-2001", "days_ago": 1, "time": "10:00", "amount": 999.99, "method": "credit", "brand": "Visa", "installments": 1, "status": "approved" }
+      ]
+    }
+  ]
+}
