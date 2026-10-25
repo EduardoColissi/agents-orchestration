@@ -5,7 +5,11 @@ const ConfigSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
+  /** anthropic = Claude API (default); ollama = free local models, no API key. */
+  LLM_PROVIDER: z.enum(['anthropic', 'ollama']).default('anthropic'),
   ANTHROPIC_API_KEY: z.string().optional(),
+  OLLAMA_URL: z.string().default('http://localhost:11434'),
+  OLLAMA_MODEL: z.string().default('qwen2.5:7b'),
   ROUTER_MODEL: z.string().default('claude-haiku-5-5'),
   AGENT_MODEL: z.string().default('claude-sonnet-5-5'),
   PERSONALITY_ENABLED: z.stringbool().default(true),

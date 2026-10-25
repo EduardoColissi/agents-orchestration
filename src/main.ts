@@ -15,4 +15,4 @@ process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
 await app.listen({ port: config.PORT, host: config.HOST });
-deps.logger.info({ port: config.PORT, router_model: config.ROUTER_MODEL, agent_model: config.AGENT_MODEL, kb_chunks: deps.knowledgeBaseSize }, 'server ready');
+deps.logger.info({ port: config.PORT, provider: config.LLM_PROVIDER, router_model: config.LLM_PROVIDER === 'ollama' ? config.OLLAMA_MODEL : config.ROUTER_MODEL, agent_model: config.LLM_PROVIDER === 'ollama' ? config.OLLAMA_MODEL : config.AGENT_MODEL, kb_chunks: deps.knowledgeBaseSize }, 'server ready');

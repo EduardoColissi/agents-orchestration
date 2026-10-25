@@ -1,6 +1,7 @@
 import type { Config } from './config.js';
 import type { LLMClient } from './llm/client.js';
 import { AnthropicClient } from './llm/anthropic.js';
+import { OllamaClient } from './llm/ollama.js';
 import { RouterAgent } from './agents/router.js';
 import { KnowledgeAgent } from './agents/knowledge.js';
 import { SupportAgent } from './agents/support.js';
@@ -37,9 +38,15 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
 
   let llm = opts.llm;
   if (!llm) {
-    if (!config.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is required (see .env.example)');
-    llm = new AnthropicClient(config.ANTHROPIC_API_KEY);
+    if (config.LLM_PROVIDER === 'ollama') {
+      llm = new OllamaClient(config.OLLAMA_URL, config.OLLAMA_MODEL);
+    } else {
+      if (!config.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is required (see .env.example), or set LLM_PROVIDER=ollama');
+      llm = new AnthropicClient(config.ANTHROPIC_API_KEY);
+    }
   }
+  // With Ollama every role uses the single local model.
+  const model = (claudeModel: string) => (config.LLM_PROVIDER === 'ollama' ? config.OLLAMA_MODEL : claudeModel);
 
   const repo = opts.repo ?? MockCustomerRepository.fromFile(config.CUSTOMERS_PATH, opts.now);
   const store = opts.store ?? InMemoryVectorStore.load(config.INDEX_PATH);
@@ -52,22 +59,22 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
   if (retriever.isEmpty) logger.warn({ index: config.INDEX_PATH }, 'knowledge base is empty — run `npm run ingest`');
 
   const orchestrator = new Orchestrator({
-    router: new RouterAgent(llm, config.ROUTER_MODEL),
+    router: new RouterAgent(llm, model(config.ROUTER_MODEL)),
     agents: {
       knowledge: new KnowledgeAgent(llm, createKnowledgeBaseTool(retriever), {
-        model: config.AGENT_MODEL,
+        model: model(config.AGENT_MODEL),
         webSearchMaxUses: config.WEB_SEARCH_MAX_USES,
         maxIterations: config.AGENT_MAX_ITERATIONS,
         ...(opts.now ? { now: opts.now } : {}),
       }),
       support: new SupportAgent(llm, repo, {
-        model: config.AGENT_MODEL,
+        model: model(config.AGENT_MODEL),
         maxIterations: config.AGENT_MAX_ITERATIONS,
         ...(opts.now ? { now: opts.now } : {}),
       }),
     },
     escalation: new EscalationAgent(repo),
-    personality: new PersonalityStage(llm, { model: config.PERSONALITY_MODEL, enabled: config.PERSONALITY_ENABLED }),
+    personality: new PersonalityStage(llm, { model: model(config.PERSONALITY_MODEL), enabled: config.PERSONALITY_ENABLED }),
     logger,
     confidenceThreshold: config.ROUTER_CONFIDENCE_THRESHOLD,
   });
