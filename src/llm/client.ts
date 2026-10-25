@@ -6,6 +6,15 @@ import type { Source, TokenUsage } from '../types.js';
  */
 export interface LLMClient {
   complete(request: LLMRequest): Promise<LLMResponse>;
+  /** What the provider can do natively; agents adapt (e.g. add a local web search tool). */
+  readonly capabilities: LLMCapabilities;
+}
+
+export interface LLMCapabilities {
+  /** Provider runs web searches server-side (Anthropic `web_search` tool). */
+  serverWebSearch: boolean;
+  /** Provider honours `forceTool` natively (tool_choice). */
+  forcedToolChoice: boolean;
 }
 
 export interface ToolSpec {

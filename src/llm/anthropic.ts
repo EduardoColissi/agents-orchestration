@@ -6,6 +6,7 @@ const MAX_PAUSE_CONTINUATIONS = 3;
 
 /** Claude implementation of {@link LLMClient}, including the server-side web search tool. */
 export class AnthropicClient implements LLMClient {
+  readonly capabilities = { serverWebSearch: true, forcedToolChoice: true } as const;
   private readonly client: Anthropic;
 
   constructor(apiKey: string, client?: Anthropic) {

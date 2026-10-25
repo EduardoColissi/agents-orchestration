@@ -16,6 +16,7 @@ export type FakeHandler = (request: LLMRequest, callIndex: number) => FakeReply 
  */
 export class FakeLLM implements LLMClient {
   readonly calls: LLMRequest[] = [];
+  capabilities = { serverWebSearch: true, forcedToolChoice: true };
   private readonly handler: FakeHandler;
   private idCounter = 0;
 
