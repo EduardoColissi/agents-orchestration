@@ -1,0 +1,31 @@
+{
+  "_comment": "Seeds for `npm run ingest`. Pages are crawled up to maxDepth following same-host links whose URL contains one of the keywords. localKnowledgeDir holds internal docs (markdown) ingested alongside the web pages.",
+  "seeds": [
+    "https://www.getnet.net/",
+    "https://www.getnet.net/en",
+    "https://www.getnet.net/en/our-solutions/in-person-payments",
+    "https://site.getnet.com.br/",
+    "https://site.getnet.com.br/todas-as-maquininhas/",
+    "https://site.getnet.com.br/get-tap/",
+    "https://site.getnet.com.br/pix/",
+    "https://site.getnet.com.br/link-de-pagamento/",
+    "https://site.getnet.com.br/crediario/",
+    "https://site.getnet.com.br/conta-digital/",
+    "https://site.getnet.com.br/taxas-personalizadas/",
+    "https://site.getnet.com.br/get-ajuda/",
+    "https://site.getnet.com.br/duvidas/",
+    "https://www.santander.com.br/getnet",
+    "https://www.santander.com.br/blog/solucoes-getnet",
+    "https://www.santander.com.br/blog/link-de-pagamento",
+    "https://www.santander.com.br/blog/como-usar-getnet-vender-mais"
+  ],
+  "allowedHosts": ["www.getnet.net", "site.getnet.com.br", "www.santander.com.br"],
+  "keywords": [
+    "maquin", "get-", "pix", "antecip", "link", "pagamento", "ajuda", "duvida", "faq",
+    "crediario", "taxa", "conta", "receb", "solutions", "payments", "whatsapp", "smart", "classica", "mini", "tap"
+  ],
+  "maxDepth": 2,
+  "maxPages": 60,
+  "requestDelayMs": 300,
+  "localKnowledgeDir": "data/knowledge"
+}
