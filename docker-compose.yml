@@ -1,3 +1,6 @@
+# Two ways to run:
+#   docker compose up --build                       → Claude API (needs ANTHROPIC_API_KEY in .env)
+#   docker compose --profile local up --build       → fully local, free: Ollama + qwen2.5:7b, no API key
 services:
   api:
     build: .
@@ -5,10 +8,60 @@ services:
     ports:
       - "${PORT:-3000}:3000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       PORT: 3000
     volumes:
       # Lets `docker compose run --rm api npm run ingest:prod` refresh the index on the host.
       - ./data:/app/data
     restart: unless-stopped
+
+  # ---- local profile: no external API ----
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["local"]
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    profiles: ["local"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["sh", "-c", "ollama pull ${OLLAMA_MODEL:-qwen2.5:7b}"]
+
+  api-local:
+    build: .
+    image: getnet-multi-agent:latest
+    profiles: ["local"]
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: 3000
+      LLM_PROVIDER: ollama
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      # Local models are slower: skip the extra Personality call unless you want it.
+      PERSONALITY_ENABLED: ${PERSONALITY_ENABLED:-false}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  ollama-models:
