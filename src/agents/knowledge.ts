@@ -3,6 +3,7 @@ import type { Agent, AgentContext, AgentResult } from '../types.js';
 import { localDate } from '../support/dates.js';
 import { knowledgePrompt } from './prompts.js';
 import { runToolLoop, type AgentTool } from './toolLoop.js';
+import { createWebSearchTool } from './webSearchTool.js';
 
 const NOT_FOUND_MARKER = '<<NOT_FOUND>>';
 
@@ -30,14 +31,16 @@ export class KnowledgeAgent implements Agent {
       ? `${ctx.message}\n\n<account_findings agent="support">\n${previous.map((p) => p.answer).join('\n\n')}\n</account_findings>`
       : ctx.message;
 
+    // Providers without server-side search (Ollama) get a local DuckDuckGo tool instead.
+    const serverSearch = this.llm.capabilities.serverWebSearch;
     const run = (webSearchAvailable: boolean) =>
       runToolLoop({
         llm: this.llm,
         model: this.options.model,
         system: knowledgePrompt({ today: localDate(now), language: ctx.language, hasPreviousContext: previous.length > 0, webSearchAvailable }),
         userMessage,
-        tools: [this.knowledgeBaseTool],
-        ...(webSearchAvailable ? { webSearch: { maxUses: this.options.webSearchMaxUses } } : {}),
+        tools: [this.knowledgeBaseTool, ...(webSearchAvailable && !serverSearch ? [createWebSearchTool(undefined, this.options.webSearchMaxUses)] : [])],
+        ...(webSearchAvailable && serverSearch ? { webSearch: { maxUses: this.options.webSearchMaxUses } } : {}),
         maxIterations: this.options.maxIterations,
         maxTokens: 1200,
       });

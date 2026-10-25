@@ -256,6 +256,20 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     expect(llm.calls.find((c) => kindOf(c) === 'personality')!.messages[0]!.content).toContain('<draft>');
   });
 
+  it('uses a local web search tool when the provider has no server-side search (Ollama mode)', async () => {
+    const llm = scriptedLLM({
+      router: [route({ route: 'knowledge' })],
+      knowledge: [{ toolCalls: [{ name: 'web_search', input: { query: 'cotação euro hoje' } }] }, { text: 'Euro is around R$ 6,20 today.' }],
+    });
+    llm.capabilities = { serverWebSearch: false, forcedToolChoice: false };
+    const { app } = await buildTestApp(llm);
+    const body = (await post(app, "What's the euro exchange rate today?")).json();
+    const knowledgeCall = llm.calls.find((c) => kindOf(c) === 'knowledge')!;
+    expect(knowledgeCall.webSearch).toBeUndefined();
+    expect(knowledgeCall.tools!.map((t) => t.name)).toEqual(['search_knowledge_base', 'web_search']);
+    expect(body.tools_used).toContain('web_search');
+  });
+
   it('GET /health reports the knowledge base size', async () => {
     const { app } = await buildTestApp(scriptedLLM({}));
     expect((await app.inject({ method: 'GET', url: '/health' })).json()).toEqual({ status: 'ok', knowledge_base_chunks: 4 });
