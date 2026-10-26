@@ -56,7 +56,8 @@ EVAL_BASE_URL=http://localhost:3000 npm run eval   # same, against a running ser
 | Variable | Default | Purpose |
 |---|---|---|
 | `LLM_PROVIDER` | `anthropic` | `anthropic` (Claude API) or `ollama` (free local model) |
-| `ANTHROPIC_API_KEY` | — | Required for `anthropic` |
+| `ANTHROPIC_API_KEY` | — | Required for `anthropic` (a workspace key, `sk-ant-api03-…`) |
+| `ANTHROPIC_WORKSPACE_ID` | — | Only for organisation-level keys (`sk-ant-usr…`), which the API requires to name a workspace |
 | `OLLAMA_URL` / `OLLAMA_MODEL` | `http://localhost:11434` / `qwen2.5:7b` | For `ollama` (all roles use this one model) |
 | `ROUTER_MODEL` | `claude-haiku-5-5` | Cheap, fast classification |
 | `AGENT_MODEL` | `claude-sonnet-5-5` | Knowledge and Support agents |

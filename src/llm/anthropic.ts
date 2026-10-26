@@ -9,8 +9,15 @@ export class AnthropicClient implements LLMClient {
   readonly capabilities = { serverWebSearch: true, forcedToolChoice: true } as const;
   private readonly client: Anthropic;
 
-  constructor(apiKey: string, client?: Anthropic) {
-    this.client = client ?? new Anthropic({ apiKey, maxRetries: 2, timeout: 60_000 });
+  constructor(apiKey: string, client?: Anthropic, options: { workspaceId?: string } = {}) {
+    this.client =
+      client ??
+      new Anthropic({
+        apiKey,
+        maxRetries: 2,
+        timeout: 60_000,
+        ...(options.workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': options.workspaceId } } : {}),
+      });
   }
 
   async complete(request: LLMRequest): Promise<LLMResponse> {

@@ -42,7 +42,7 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
       llm = new OllamaClient(config.OLLAMA_URL, config.OLLAMA_MODEL);
     } else {
       if (!config.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is required (see .env.example), or set LLM_PROVIDER=ollama');
-      llm = new AnthropicClient(config.ANTHROPIC_API_KEY);
+      llm = new AnthropicClient(config.ANTHROPIC_API_KEY, undefined, { workspaceId: config.ANTHROPIC_WORKSPACE_ID });
     }
   }
   // With Ollama every role uses the single local model.

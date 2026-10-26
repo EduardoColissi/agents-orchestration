@@ -9,6 +9,8 @@ const ConfigSchema = z.object({
   /** anthropic = Claude API (default); ollama = free local models, no API key. */
   LLM_PROVIDER: z.enum(['anthropic', 'ollama']).default('anthropic'),
   ANTHROPIC_API_KEY: z.string().optional(),
+  /** Required only for organisation-level keys (sk-ant-usr…), which must name a workspace. */
+  ANTHROPIC_WORKSPACE_ID: z.string().optional(),
   OLLAMA_URL: z.string().default('http://localhost:11434'),
   OLLAMA_MODEL: z.string().default('qwen2.5:7b'),
   ROUTER_MODEL: z.string().default('claude-haiku-5-5'),
