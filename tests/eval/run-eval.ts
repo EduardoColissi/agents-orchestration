@@ -4,7 +4,7 @@
  * Prints a scorecard, writes eval-report.json and exits 1 when route accuracy is below the gate.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { loadConfig } from '../../src/config.js';
+import { loadConfig, loadDotEnv } from '../../src/config.js';
 import { buildDependencies } from '../../src/container.js';
 import { createLogger } from '../../src/observability/logger.js';
 import type { ChatResponse } from '../../src/orchestrator.js';
@@ -38,6 +38,7 @@ async function makeCaller(): Promise<(message: string, userId: string) => Promis
       return (await res.json()) as ChatResponse;
     };
   }
+  loadDotEnv();
   const config = loadConfig({ ...process.env, LOG_LEVEL: process.env.LOG_LEVEL ?? 'warn' });
   const { orchestrator } = buildDependencies({ config, logger: createLogger(config.LOG_LEVEL) });
   return (message, userId) => orchestrator.handle({ message, userId });

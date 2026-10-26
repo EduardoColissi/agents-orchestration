@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { z } from 'zod';
 
 const ConfigSchema = z.object({
@@ -30,8 +31,17 @@ const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = ConfigSchema.safeParse(env);
+/** Loads `.env` (if present) into process.env without overriding variables already set. */
+export function loadDotEnv(path = process.env.ENV_FILE ?? '.env'): void {
+  if (!existsSync(path)) return;
+  const before = { ...process.env };
+  process.loadEnvFile(path);
+  for (const [key, value] of Object.entries(before)) if (value !== undefined) process.env[key] = value;
+}
+
+export function loadConfig(env?: NodeJS.ProcessEnv): Config {
+  if (!env) loadDotEnv();
+  const parsed = ConfigSchema.safeParse(env ?? process.env);
   if (!parsed.success) {
     throw new Error(`Invalid configuration: ${z.prettifyError(parsed.error)}`);
   }
