@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { z } from 'zod';
 
 const ConfigSchema = z.object({
@@ -31,12 +31,35 @@ const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 
+/**
+ * Parses a dotenv file. Tolerates what Windows editors produce: UTF-8 BOM, UTF-16 (Notepad /
+ * old PowerShell `Set-Content`), CRLF, quotes and `export KEY=` prefixes.
+ */
+export function parseDotEnv(raw: Buffer): Record<string, string> {
+  let text: string;
+  if (raw[0] === 0xff && raw[1] === 0xfe) text = raw.subarray(2).toString('utf16le');
+  else if (raw[0] === 0xfe && raw[1] === 0xff) text = Buffer.from(raw.subarray(2)).swap16().toString('utf16le');
+  else text = raw.toString('utf8').replace(/^\uFEFF/, '');
+
+  const out: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!match) continue;
+    let value = match[2]!.trim();
+    const quoted = /^(['"])(.*)\1$/.exec(value);
+    if (quoted) value = quoted[2]!;
+    else value = value.replace(/\s+#.*$/, '').trim();
+    out[match[1]!] = value;
+  }
+  return out;
+}
+
 /** Loads `.env` (if present) into process.env without overriding variables already set. */
 export function loadDotEnv(path = process.env.ENV_FILE ?? '.env'): void {
   if (!existsSync(path)) return;
-  const before = { ...process.env };
-  process.loadEnvFile(path);
-  for (const [key, value] of Object.entries(before)) if (value !== undefined) process.env[key] = value;
+  for (const [key, value] of Object.entries(parseDotEnv(readFileSync(path)))) {
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
 }
 
 export function loadConfig(env?: NodeJS.ProcessEnv): Config {
