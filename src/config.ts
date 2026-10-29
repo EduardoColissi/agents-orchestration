@@ -26,6 +26,18 @@ const ConfigSchema = z.object({
   ROUTER_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
   AGENT_MAX_ITERATIONS: z.coerce.number().int().min(1).max(10).default(5),
 
+  /** SQLite file (conversations, handoffs, tickets, audit). A Docker volume in compose. */
+  DB_PATH: z.string().default('var/app.db'),
+  /** HS256 key (>= 32 chars). Unset = generated once and kept next to DB_PATH. */
+  AUTH_JWT_SECRET: z.string().min(32).optional(),
+  AUTH_ISSUER: z.string().default('getnet-support'),
+  AUTH_AUDIENCE: z.string().default('getnet-support-api'),
+  AUTH_TOKEN_TTL_S: z.coerce.number().int().min(60).max(86400).default(3600),
+  USERS_PATH: z.string().default('data/users.json'),
+  /** Pending handoffs expire after this many minutes (an expired approval never executes). */
+  HANDOFF_TTL_MINUTES: z.coerce.number().int().min(1).default(240),
+  SWEEP_INTERVAL_MS: z.coerce.number().int().min(1000).default(60000),
+
   INDEX_PATH: z.string().default('data/index.json'),
   SOURCES_PATH: z.string().default('data/sources.json'),
   CUSTOMERS_PATH: z.string().default('data/customers.json'),

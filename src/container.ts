@@ -14,11 +14,23 @@ import { Retriever, createKnowledgeBaseTool } from './rag/retriever.js';
 import { createEmbedder, type Embedder } from './rag/embedder.js';
 import { InMemoryVectorStore, type VectorStore } from './rag/vectorStore.js';
 import { createLogger, type Logger } from './observability/logger.js';
+import { openDb, type Db } from './store/db.js';
+import { AuditLog } from './store/audit.js';
+import { TicketStore } from './store/tickets.js';
+import { JwtService } from './auth/jwt.js';
+import { CredentialStore } from './auth/credentials.js';
+import { resolveJwtSecret } from './auth/secret.js';
 
 export interface AppDeps {
+  config: Config;
   orchestrator: Orchestrator;
   logger: Logger;
   knowledgeBaseSize: number;
+  db: Db;
+  audit: AuditLog;
+  jwt: JwtService;
+  credentials: CredentialStore;
+  now: () => Date;
 }
 
 export interface BuildOptions {
@@ -27,6 +39,7 @@ export interface BuildOptions {
   repo?: CustomerRepository;
   store?: VectorStore;
   embedder?: Embedder;
+  db?: Db;
   logger?: Logger;
   now?: () => Date;
 }
@@ -49,7 +62,15 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
   const local = config.LLM_PROVIDER === 'ollama';
   const model = (role: 'router' | 'agent', claudeModel: string) => (local ? (role === 'router' ? config.OLLAMA_ROUTER_MODEL : config.OLLAMA_AGENT_MODEL) : claudeModel);
 
-  const repo = opts.repo ?? MockCustomerRepository.fromFile(config.CUSTOMERS_PATH, opts.now);
+  const now = opts.now ?? (() => new Date());
+  const db = opts.db ?? openDb(config.DB_PATH);
+  const audit = new AuditLog(db, now);
+  const { secret, source } = resolveJwtSecret(config.AUTH_JWT_SECRET, config.DB_PATH);
+  if (source === 'generated') logger.warn({ db: config.DB_PATH }, 'AUTH_JWT_SECRET not set — generated a signing key next to the database');
+  const jwt = new JwtService({ secret, issuer: config.AUTH_ISSUER, audience: config.AUTH_AUDIENCE, ttlSeconds: config.AUTH_TOKEN_TTL_S });
+  const credentials = CredentialStore.fromFile(config.USERS_PATH);
+
+  const repo = opts.repo ?? MockCustomerRepository.fromFile(config.CUSTOMERS_PATH, opts.now, new TicketStore(db));
   const store = opts.store ?? InMemoryVectorStore.load(config.INDEX_PATH);
   const embedder = opts.embedder ?? createEmbedder(config.EMBEDDER);
   const retriever = new Retriever(store, embedder, {
@@ -80,5 +101,5 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
     confidenceThreshold: config.ROUTER_CONFIDENCE_THRESHOLD,
   });
 
-  return { orchestrator, logger, knowledgeBaseSize: store.size };
+  return { config, orchestrator, logger, knowledgeBaseSize: store.size, db, audit, jwt, credentials, now };
 }

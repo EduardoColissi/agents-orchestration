@@ -9,6 +9,13 @@ import { MockCustomerRepository } from '../src/support/mockRepository.js';
 import { HashingEmbedder } from '../src/rag/embedder.js';
 import { buildIndex } from '../src/rag/ingest.js';
 import type { RouteDecision } from '../src/agents/router.js';
+import { JwtService, type Role } from '../src/auth/jwt.js';
+
+export const TEST_JWT = { secret: 'test-secret-test-secret-test-secret-0123', issuer: 'getnet-support', audience: 'getnet-support-api', ttlSeconds: 3600 };
+const testJwt = new JwtService(TEST_JWT);
+
+/** A valid bearer token for tests (same key as the app built by buildTestApp). */
+export const tokenFor = async (sub: string, role: Role = 'merchant') => `Bearer ${await testJwt.issue({ sub, role })}`;
 
 /** Friday 2026-10-23 12:00 in São Paulo. */
 export const FIXED_NOW = () => new Date('2026-10-23T15:00:00Z');
@@ -59,11 +66,11 @@ export function scriptedLLM(script: Partial<Record<AgentKind, Array<FakeReply | 
   });
 }
 
-export async function buildTestApp(llm: FakeLLM, opts: { emptyKb?: boolean; personality?: boolean } = {}) {
-  const config = loadConfig({ LOG_LEVEL: 'silent', ROUTER_CONFIDENCE_THRESHOLD: '0.6', PERSONALITY_ENABLED: String(opts.personality ?? false) });
+export async function buildTestApp(llm: FakeLLM, opts: { emptyKb?: boolean; personality?: boolean; dbPath?: string; now?: () => Date } = {}) {
+  const config = loadConfig({ LOG_LEVEL: 'silent', ROUTER_CONFIDENCE_THRESHOLD: '0.6', PERSONALITY_ENABLED: String(opts.personality ?? false), AUTH_JWT_SECRET: TEST_JWT.secret, DB_PATH: opts.dbPath ?? ':memory:' });
   const repo = new MockCustomerRepository(JSON.parse(readFileSync('data/customers.json', 'utf8')), FIXED_NOW);
   const embedder = new HashingEmbedder();
   const store = await buildIndex(opts.emptyKb ? [] : KB_DOCS, embedder);
   const deps = buildDependencies({ config, llm, repo, store, embedder, now: FIXED_NOW, logger: pino({ level: 'silent' }) });
-  return { app: buildServer(deps), repo, llm };
+  return { app: await buildServer(deps), repo, llm, deps };
 }

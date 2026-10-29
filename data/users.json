@@ -1,0 +1,32 @@
+[
+  {
+    "username": "cliente1988",
+    "role": "merchant",
+    "salt": "6R7n6gVtR2PBS6xCRiqKSg",
+    "hash": "675H1tAueV3QAjnXiSwpMckAmIA_HGt03Lnz8rfvdPE"
+  },
+  {
+    "username": "cliente2000",
+    "role": "merchant",
+    "salt": "mQkd44WgEn5L5ZdFEJzQ5g",
+    "hash": "n37Ffx3d0lAZqKEygsROlbJRd6kuGqDP_KMoVdvXGVA"
+  },
+  {
+    "username": "ghost42",
+    "role": "merchant",
+    "salt": "BV2v9mXe8LcBTb-jjiwhHg",
+    "hash": "ERLLjZe99oRcVkrnbRQAhAxfaWZhLxaUBBFmb6hugyg"
+  },
+  {
+    "username": "op.ana",
+    "role": "operator",
+    "salt": "ke9Cj-QtOHOpLzDhUrI8iQ",
+    "hash": "DNCibhs-dAsZDe6FOsVDxQ1XEDKbl2YnowxLtBi8Wq8"
+  },
+  {
+    "username": "op.bruno",
+    "role": "operator",
+    "salt": "cx7YWl4QB3ZF2deFsKo4SA",
+    "hash": "FsusjLsPkWG5WVKL0TjClDGnZEfZh2aKPbP1l8Psqtw"
+  }
+]

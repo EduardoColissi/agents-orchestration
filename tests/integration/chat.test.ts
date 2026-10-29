@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildTestApp, kindOf, route, scriptedLLM } from '../helpers.js';
+import { buildTestApp, kindOf, route, scriptedLLM, tokenFor } from '../helpers.js';
 
-const post = (app: Awaited<ReturnType<typeof buildTestApp>>['app'], message: string, user_id = 'cliente1988') =>
-  app.inject({ method: 'POST', url: '/chat', payload: { message, user_id } });
+const post = async (app: Awaited<ReturnType<typeof buildTestApp>>['app'], message: string, user_id = 'cliente1988') =>
+  app.inject({ method: 'POST', url: '/chat', payload: { message, user_id }, headers: { authorization: await tokenFor(user_id) } });
 
 describe('POST /chat — happy paths (spec §8 scenarios)', () => {
   it('#1 knowledge via RAG: searches the KB and returns sources', async () => {
@@ -185,7 +185,7 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     const empty = await post(app, '   ');
     expect(empty.statusCode).toBe(400);
     expect(empty.json().details.message).toBeDefined();
-    const malformed = await app.inject({ method: 'POST', url: '/chat', headers: { 'content-type': 'application/json' }, payload: '{"message":' });
+    const malformed = await app.inject({ method: 'POST', url: '/chat', headers: { 'content-type': 'application/json', authorization: await tokenFor('cliente1988') }, payload: '{"message":' });
     expect(malformed.statusCode).toBe(400);
   });
 

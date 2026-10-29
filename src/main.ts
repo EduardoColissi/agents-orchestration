@@ -4,7 +4,7 @@ import { buildServer } from './server.js';
 
 const config = loadConfig();
 const deps = buildDependencies({ config });
-const app = buildServer(deps);
+const app = await buildServer(deps);
 
 const shutdown = async (signal: string) => {
   deps.logger.info({ signal }, 'shutting down');
