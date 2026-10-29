@@ -183,7 +183,9 @@ async function scoreCanaries(judge: Judge, records: RunRecord[]): Promise<Canary
 function writeReport(meta: Record<string, unknown>, records: RunRecord[], canaries: CanaryResult[]) {
   const summary = summarize(records, canaries);
   const baseline = existsSync('eval/baseline.json') ? (JSON.parse(readFileSync('eval/baseline.json', 'utf8')) as Baseline) : null;
-  const gateFailures = flag('update-baseline') ? [] : gate(summary, baseline);
+  // A partial run (--only) lacks the checks of the skipped cases: the gate only compares full runs.
+  const gateFailures = flag('update-baseline') || flag('only') ? [] : gate(summary, baseline);
+  if (flag('only') && baseline) console.log('Gate skipped: partial run (--only).');
   mkdirSync('eval/reports', { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   writeFileSync(`eval/reports/${stamp}.json`, `${JSON.stringify({ meta, summary, gate: gateFailures, canaries, records }, null, 2)}\n`);

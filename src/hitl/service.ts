@@ -32,6 +32,8 @@ export interface HitlServiceDeps {
   now?: () => Date;
 }
 
+const MAX_DELIVERY_ATTEMPTS = 5;
+
 const ACTIONS: Record<Handoff['kind'], HandoffAction[]> = { assist: ['reply', 'reject'], approval: ['approve', 'reject'] };
 
 const REJECTED: Record<string, (id: string) => string> = {
@@ -54,6 +56,11 @@ const pick = (templates: Record<string, (id: string) => string>, h: Handoff) => 
  * agents. Expired handoffs are closed by the sweeper; a crash mid-resume is completed at boot.
  */
 export class HitlService {
+  /** Single instance: handoffs being delivered right now, so the tick never runs one twice in parallel. */
+  private readonly delivering = new Set<string>();
+  private readonly failures = new Map<string, number>();
+  private ticking = false;
+
   constructor(private readonly deps: HitlServiceDeps) {}
 
   queue(status: HandoffStatus = 'pending') {
@@ -113,6 +120,16 @@ export class HitlService {
    * (boot recovery): the side effect is idempotent and the message is unique per handoff.
    */
   async deliver(handoff: Handoff): Promise<{ role: MessageRole; content: string }> {
+    if (this.delivering.has(handoff.id)) throw new Error(`handoff ${handoff.id} is already being delivered`);
+    this.delivering.add(handoff.id);
+    try {
+      return await this.deliverOnce(handoff);
+    } finally {
+      this.delivering.delete(handoff.id);
+    }
+  }
+
+  private async deliverOnce(handoff: Handoff): Promise<{ role: MessageRole; content: string }> {
     const resolution = handoff.resolution!;
     let outcome: { role: MessageRole; content: string };
     if (handoff.kind === 'assist' && resolution.action === 'reply') {
@@ -147,11 +164,15 @@ export class HitlService {
 
   /** Periodic work: expire stale handoffs and retry deliveries stuck in `resuming`. Never throws. */
   async tick(stuckAfterMs = 60_000): Promise<void> {
+    if (this.ticking) return;
+    this.ticking = true;
     try {
       this.sweep();
       await this.recover(stuckAfterMs);
     } catch (err) {
       this.deps.logger.error({ err }, 'handoff maintenance failed');
+    } finally {
+      this.ticking = false;
     }
   }
 
@@ -159,14 +180,19 @@ export class HitlService {
   async recover(olderThanMs = 0): Promise<number> {
     let recovered = 0;
     for (const h of this.deps.handoffs.findResuming(olderThanMs)) {
+      // In flight in this process, or given up after repeated failures (needs an operator/engineer).
+      if (this.delivering.has(h.id) || (this.failures.get(h.id) ?? 0) >= MAX_DELIVERY_ATTEMPTS) continue;
       try {
         await this.deliver(h);
+        this.failures.delete(h.id);
         this.deps.audit.write({ actor: 'system', action: 'handoff.recovered', subject: h.id });
         this.deps.logger.warn({ handoff_id: h.id }, 'recovered an interrupted handoff resolution');
         recovered++;
       } catch (err) {
         // One broken handoff must not stop the others, nor the boot.
-        this.deps.logger.error({ handoff_id: h.id, err }, 'handoff recovery failed; will retry');
+        const attempts = (this.failures.get(h.id) ?? 0) + 1;
+        this.failures.set(h.id, attempts);
+        this.deps.logger.error({ handoff_id: h.id, attempts, err }, attempts >= MAX_DELIVERY_ATTEMPTS ? 'handoff delivery abandoned after repeated failures' : 'handoff recovery failed; will retry');
       }
     }
     return recovered;

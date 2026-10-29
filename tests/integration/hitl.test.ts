@@ -288,4 +288,29 @@ describe('replacement proposal after a failed attempt', () => {
     expect(body.handoff).toMatchObject({ kind: 'approval', status: 'pending' });
   });
 });
+
+describe('slow resumes', () => {
+  it('the periodic tick never starts a second delivery while a slow resume is in flight', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const llm = scriptedLLM({
+      router: [route({ route: 'support', language: 'pt' })],
+      support: [
+        { toolCalls: [{ name: 'request_terminal_replacement', input: { serial: 'GS-1988-0001', reason: 'offline for days' } }] },
+        { text: 'Troca aprovada!' },
+      ],
+    });
+    const t = await buildTestApp(llm);
+    const body = await chat(t, 'Quero trocar minha maquininha GS-1988-0001 por uma nova');
+    const original = llm.complete.bind(llm);
+    llm.complete = async (req) => (await gate, original(req));
+    const resolving = asOperator(t, 'POST', `/operator/handoffs/${body.handoff.handoff_id}/resolve`, { action: 'approve', expected_version: 1 });
+    await new Promise((r) => setTimeout(r, 20));
+    await Promise.all([t.deps.hitl.tick(0), t.deps.hitl.tick(0)]);
+    release();
+    expect((await resolving).statusCode).toBe(200);
+    expect(t.deps.audit.list({ action: 'approval.executed' })).toHaveLength(1);
+    expect(t.repo.listTickets()).toHaveLength(1);
+  });
+});
 });

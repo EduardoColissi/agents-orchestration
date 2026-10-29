@@ -36,11 +36,11 @@ export interface ApprovalCheckpoint {
  * verb plus a machine reference, and none of the other things merchants "trocam" (chip, paper roll,
  * password, bank account, change for cash…).
  */
-const NEW_MACHINE = /((nova|outra) (maquininha|m[aá]quina)|new (card )?machine)/i;
-const REPLACE_VERB = /(troc|substitu|replac|exchange)/i;
-const MACHINE = /(maquininha|m[aá]quina|terminal|machine|get (smart|mini|cl[aá]ssica|tap)|\b(GS|GC)-\d)/i;
-const OTHER_OBJECT = /(chip|bobina|papel|senha|password|conta|account|bateria|battery|carregador|charger|cabo|cable|troco|change for)/i;
-export const wantsMachineReplacement = (text: string) => NEW_MACHINE.test(text) || (REPLACE_VERB.test(text) && MACHINE.test(text) && !OTHER_OBJECT.test(text));
+const ASK_NEW_MACHINE = /(?<!\p{L})(quero|preciso|gostaria|want|need|request)(?!\p{L})[^.?!]{0,30}(?<!\p{L})(nova|outra|new|another)(?!\p{L})[^.?!]{0,15}(?<!\p{L})(maquininha|m[aá]quina|machine|terminal)(?!\p{L})/iu;
+const REPLACE_VERB = /(?<!\p{L})(troc(ar|a|o|ando)?|substitu\p{L}*|replac\p{L}*|exchang\p{L}*)(?!\p{L})/iu;
+const MACHINE = /(?<!\p{L})(maquininha|m[aá]quina|terminal|machine|get (smart|mini|cl[aá]ssica|tap))(?!\p{L})|\b(GS|GC)-\d/iu;
+const OTHER_OBJECT = /(?<!\p{L})(chip|bobina|papel|senha|password|conta|account|carregador|charger|cabo|cable)(?!\p{L})/iu;
+export const wantsMachineReplacement = (text: string) => ASK_NEW_MACHINE.test(text) || (REPLACE_VERB.test(text) && MACHINE.test(text) && !OTHER_OBJECT.test(text));
 
 const NOT_FOUND_MESSAGES: Record<string, string> = {
   pt: 'Não encontrei uma conta Getnet vinculada a este usuário, então não consigo consultar vendas, recebimentos ou maquininhas. Confira se você está logado com o usuário certo ou, se preferir, posso te encaminhar para um atendente humano.',

@@ -101,5 +101,9 @@ describe('support tools', () => {
     expect(wantsMachineReplacement('Como troco a bobina da maquininha?')).toBe(false);
     expect(wantsMachineReplacement('Preciso trocar o chip da maquininha')).toBe(false);
     expect(wantsMachineReplacement('My card machine will not connect')).toBe(false);
+    expect(wantsMachineReplacement('Minha nova maquininha não liga')).toBe(false);
+    expect(wantsMachineReplacement('Recebi a nova máquina, como ativo?')).toBe(false);
+    expect(wantsMachineReplacement('Quero trocar a maquininha porque a bateria não carrega e a tela acabou')).toBe(true);
+    expect(wantsMachineReplacement('Não encontro onde trocar a maquininha')).toBe(true);
   });
 });
