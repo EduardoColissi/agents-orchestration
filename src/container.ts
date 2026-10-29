@@ -39,6 +39,8 @@ export interface AppDeps {
   handoffs: HandoffStore;
   hitl: HitlService;
   now: () => Date;
+  /** Readiness: database, knowledge base and the LLM provider with its models (GET /ready). */
+  readiness: () => Promise<Record<string, { ok: boolean; detail?: string }>>;
 }
 
 export interface BuildOptions {
@@ -117,5 +119,30 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
   support.useAudit(audit);
   const hitl = new HitlService({ db, handoffs, conversations, audit, logger, approvals: support });
 
-  return { config, orchestrator, logger, knowledgeBaseSize: store.size, db, audit, jwt, credentials, conversations, chat, handoffs, hitl, now };
+  const readiness = async () => {
+    const database = (() => {
+      try {
+        db.prepare('SELECT 1').get();
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, detail: (err as Error).message };
+      }
+    })();
+    return { database, knowledge_base: { ok: store.size > 0, detail: `${store.size} chunks` }, llm: await llmReadiness(config, !!opts.llm) };
+  };
+
+  return { config, orchestrator, logger, knowledgeBaseSize: store.size, db, audit, jwt, credentials, conversations, chat, handoffs, hitl, now, readiness };
+}
+
+async function llmReadiness(config: Config, injected: boolean): Promise<{ ok: boolean; detail?: string }> {
+  if (injected) return { ok: true, detail: 'injected client' };
+  if (config.LLM_PROVIDER === 'anthropic') return { ok: !!config.ANTHROPIC_API_KEY, detail: 'anthropic' };
+  try {
+    const res = await fetch(`${config.OLLAMA_URL.replace(/\/$/, '')}/api/tags`, { signal: AbortSignal.timeout(2000) });
+    const names = ((await res.json()) as { models?: Array<{ name: string }> }).models?.map((m) => m.name) ?? [];
+    const missing = [config.OLLAMA_ROUTER_MODEL, config.OLLAMA_AGENT_MODEL].filter((m) => !names.includes(m));
+    return missing.length ? { ok: false, detail: `missing models: ${missing.join(', ')}` } : { ok: true, detail: 'ollama models loaded' };
+  } catch (err) {
+    return { ok: false, detail: `ollama unreachable: ${(err as Error).message}` };
+  }
 }

@@ -83,3 +83,17 @@ describe('authorization (FR7, FR8)', () => {
     expect(toolResult).not.toContain('Mercado Bairro Alto');
   });
 });
+
+describe('health and readiness', () => {
+  it('/ready checks the database, the knowledge base and the LLM without authentication', async () => {
+    const { app } = await buildTestApp(scriptedLLM({}));
+    const res = await app.inject({ method: 'GET', url: '/ready' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'ready', checks: { database: { ok: true }, knowledge_base: { ok: true }, llm: { ok: true } } });
+  });
+
+  it('/ready is 503 when the knowledge base is empty', async () => {
+    const { app } = await buildTestApp(scriptedLLM({}), { emptyKb: true });
+    expect((await app.inject({ method: 'GET', url: '/ready' })).statusCode).toBe(503);
+  });
+});

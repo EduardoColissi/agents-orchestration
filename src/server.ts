@@ -33,6 +33,12 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
 
   const local = deps.config.LLM_PROVIDER === 'ollama';
   const models = { router: local ? deps.config.OLLAMA_ROUTER_MODEL : deps.config.ROUTER_MODEL, agent: local ? deps.config.OLLAMA_AGENT_MODEL : deps.config.AGENT_MODEL };
+  // Readiness (dependencies), separate from liveness (/health).
+  app.get('/ready', async (_request, reply) => {
+    const checks = await deps.readiness();
+    const ok = Object.values(checks).every((c) => c.ok);
+    return reply.code(ok ? 200 : 503).send({ status: ok ? 'ready' : 'not_ready', checks });
+  });
   app.get('/health', async () => ({ status: 'ok', knowledge_base_chunks: deps.knowledgeBaseSize, provider: deps.config.LLM_PROVIDER, models }));
 
   // Demo identity provider (spec §3): in production this is the company's OIDC provider.
