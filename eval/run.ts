@@ -31,6 +31,7 @@ interface Golden {
 type ChatBody = {
   conversation_id: string; answer: string; route: string; agents: string[]; tools_used: string[]; sources: unknown[];
   handoff: { required: boolean; handoff_id: string | null; kind: string | null };
+  replans?: Array<{ after: string; signal: string; action: string }>;
 };
 type TraceBody = { messages: Array<{ role: string; content: string; evidence: Evidence | null }> };
 type Evidence = { standalone_query: string | null; route_decision: unknown; steps: Array<{ agent: string; tools: Array<{ name: string; input: unknown; output: string }> }>; sources: Array<{ title: string; url: string }> };
@@ -71,6 +72,8 @@ function expectChecks(expect: Record<string, unknown>, body: ChatBody): Check[] 
   if (expect.requires_sources) checks.push({ name: 'sources', pass: body.sources.length > 0 });
   if (expect.handoff !== undefined) checks.push({ name: 'handoff', pass: body.handoff.required === expect.handoff });
   if (expect.kind) checks.push({ name: 'handoff_kind', pass: body.handoff.kind === expect.kind });
+  if (expect.agents_include) checks.push({ name: 'plan', pass: agents.includes(expect.agents_include as string) });
+  if (expect.replanned !== undefined) checks.push({ name: 'replanned', pass: (body.replans?.length ?? 0) > 0 === expect.replanned });
   return checks;
 }
 
@@ -110,6 +113,8 @@ async function runCase(c: GoldenCase, run: number): Promise<RunRecord> {
 
   const lastEvidence = async () => (await api.as<TraceBody>(OPERATOR, 'GET', `/operator/conversations/${conversationId}`)).body.messages.filter((m) => m.role === 'assistant' && m.evidence).at(-1)?.evidence ?? null;
   let evidence = await lastEvidence();
+  // A single message has nothing to resolve: a rewrite there means the router copied or translated.
+  if (c.turns!.length === 1) checks.push({ name: 'no_spurious_rewrite', pass: !evidence?.standalone_query });
   if (c.expect.standalone_contains_any) {
     const q = (evidence?.standalone_query ?? '').toLowerCase();
     checks.push({ name: 'standalone_query', pass: (c.expect.standalone_contains_any as string[]).some((k) => q.includes(k.toLowerCase())) });

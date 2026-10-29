@@ -241,9 +241,10 @@ export class Orchestrator {
         if (run.value.handoff && run.value.handoff.reason !== 'support_ticket_opened') break;
         const replan = decideNext(plan, run.value);
         if (replan) {
-          plan.push('knowledge');
           turn.replans.push(replan);
-          log.info({ stage: 'replan', ...replan }, 'plan extended after observing the result');
+          log.info({ stage: 'replan', ...replan }, 'replanned after observing the result');
+          if (replan.action === 'add_knowledge') plan.push('knowledge');
+          if (replan.action === 'escalate') return this.escalate(turn, log, started, traceId, usage, executed, { userId: request.userId, language, reason: 'tool_error', message, results });
         }
       } catch (err) {
         log.error({ stage: 'agent', agent: step, err }, 'agent failed');
@@ -270,7 +271,10 @@ export class Orchestrator {
     }
 
     // 5. Human handoff when an agent or the output check asks for it.
-    const handoffReason = output.handoffReason ?? (agentHandoff && agentHandoff.reason !== 'support_ticket_opened' ? agentHandoff.reason : null);
+    const gap = output.handoffReason ?? (agentHandoff && agentHandoff.reason !== 'support_ticket_opened' ? agentHandoff.reason : null);
+    // The replanner decided this answer is final (e.g. live data unavailable): no human queue item.
+    const finished = turn.replans.some((r) => r.action === 'finish');
+    const handoffReason = finished && gap === 'knowledge_gap' ? null : gap;
     if (handoffReason === 'customer_not_found') {
       // Offer a handoff instead of opening a ticket for an account that does not exist (FR7).
       return this.finish(turn, log, started, traceId, usage, {

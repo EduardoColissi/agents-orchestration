@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildTestApp, kindOf, route, scriptedLLM, tokenFor } from '../helpers.js';
+import { decideNext } from '../../src/orchestration/replanner.js';
+import type { AgentResult } from '../../src/types.js';
 
 const chat = async (app: Awaited<ReturnType<typeof buildTestApp>>['app'], message: string) =>
   (await app.inject({ method: 'POST', url: '/chat', headers: { authorization: await tokenFor('cliente1988') }, payload: { message } })).json();
@@ -28,5 +30,28 @@ describe('replanning: observe the specialist result, then decide (feedback gap 5
     const body = await chat(app, 'When do I get paid?');
     expect(body.agents).toEqual(['router', 'support']);
     expect(body.replans).toBeUndefined();
+  });
+
+  it('escalates to a person when a support tool crashed (the answer would rest on missing data)', async () => {
+    const llm = scriptedLLM({
+      router: [route({ route: 'support' })],
+      support: [{ toolCalls: [{ name: 'get_settlements', input: {} }] }, { text: 'I could not check your deposits.' }],
+    });
+    const t = await buildTestApp(llm);
+    t.repo.getSettlements = async () => {
+      throw new Error('settlement service down');
+    };
+    const body = await chat(t.app, 'When do I get paid?');
+    expect(body.replans).toEqual([{ after: 'support', signal: 'tool_error', action: 'escalate' }]);
+    expect(body).toMatchObject({ route: 'escalation', handoff: { required: true, reason: 'tool_error', kind: 'assist', status: 'pending' } });
+  });
+
+  it('finishes without a person when live web data is unavailable', () => {
+    const knowledge = (output: string, isError: boolean): AgentResult => ({
+      agent: 'knowledge', answer: 'I cannot fetch live data right now.', sources: [], toolsUsed: ['web_search'], usage: { inputTokens: 0, outputTokens: 0, webSearches: 0 }, notFound: true,
+      evidence: [{ name: 'web_search', input: { query: 'euro' }, output, isError }],
+    });
+    expect(decideNext(['knowledge'], knowledge('Web search failed: the search provider blocked this request (bot challenge); live web data is unavailable', true))).toEqual({ after: 'knowledge', signal: 'live_data_unavailable', action: 'finish' });
+    expect(decideNext(['knowledge'], knowledge('[1] Euro — https://x', false))).toBeNull();
   });
 });

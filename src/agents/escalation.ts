@@ -9,7 +9,8 @@ export type HandoffReason =
   | 'customer_not_found'
   | 'agent_error'
   | 'knowledge_agent_incomplete'
-  | 'support_agent_incomplete';
+  | 'support_agent_incomplete'
+  | 'tool_error';
 
 const MESSAGES: Record<string, (id: string) => string> = {
   pt: (id) => `Encaminhei seu pedido para um especialista humano da Getnet (protocolo ${id}). A resposta aparece aqui nesta conversa.`,
