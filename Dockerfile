@@ -25,7 +25,10 @@ ENTRYPOINT ["npx", "tsx", "eval/run.ts"]
 # ---- runtime (default target) ----
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
-ENV NODE_ENV=production \
+# `GIT_SHA=$(git rev-parse --short HEAD) docker compose build` stamps the image; /health reports it.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA} \
+    NODE_ENV=production \
     MODEL_CACHE_DIR=/app/.models \
     PORT=3000 \
     DB_PATH=/app/var/app.db

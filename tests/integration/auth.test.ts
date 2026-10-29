@@ -99,4 +99,15 @@ describe('health and readiness', () => {
     const { app } = await buildTestApp(scriptedLLM({}), { emptyKb: true });
     expect((await app.inject({ method: 'GET', url: '/ready' })).statusCode).toBe(503);
   });
+
+describe('chat rate limit', () => {
+  it('limits chat turns per merchant, not per IP', async () => {
+    const { app, deps } = await buildTestApp(scriptedLLM({ router: Array.from({ length: 30 }, () => route({ route: 'escalation', plan: [] })) }));
+    const statuses: number[] = [];
+    for (let i = 0; i < deps.config.CHAT_RATE_LIMIT_PER_MIN + 1; i++) statuses.push((await chat(app, await tokenFor('cliente1988'), { message: `question ${i}` })).statusCode);
+    expect(statuses.at(-1)).toBe(429);
+    expect(statuses.slice(0, -1).every((s) => s === 200)).toBe(true);
+    expect((await chat(app, await tokenFor('cliente2000'), { message: 'hi' })).statusCode).toBe(200);
+  });
+});
 });

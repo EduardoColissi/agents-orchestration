@@ -151,7 +151,7 @@ export function renderMarkdown(meta: Record<string, unknown>, summary: Summary, 
   const lines = [
     `# Evaluation report — ${meta.started_at}`,
     '',
-    `API ${meta.base_url} · generator ${JSON.stringify(meta.generator)} · judge \`${meta.judge}\` · ${summary.cases} cases × ${summary.runs} runs = ${summary.records} records`,
+    `API ${meta.base_url} (build \`${meta.api_version ?? 'unknown'}\`) · runner ${JSON.stringify(meta.runner ?? {})} · generator ${JSON.stringify(meta.generator)} · judge \`${meta.judge}\` · ${summary.cases} cases × ${summary.runs} runs = ${summary.records} records`,
     '',
     '## Rubric (judge, 1–5)',
     '',

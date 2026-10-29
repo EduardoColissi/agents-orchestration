@@ -4,6 +4,7 @@
  * answer with its evidence. Phase 2 scores everything with a judge from another model family.
  * Two phases because the generator and the judge do not fit in a 12 GB GPU at the same time.
  */
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { loadDotEnv } from '../src/config.js';
 import { OllamaClient } from '../src/llm/ollama.js';
@@ -146,6 +147,17 @@ async function runCase(c: GoldenCase, run: number): Promise<RunRecord> {
   return { ...base, answer, evidence: evidenceText(evidence) + decision, checks, latencyMs, route: last!.route, standaloneQuery: evidence?.standalone_query ?? null, ...(humanAuthored ? { humanAuthored } : {}) };
 }
 
+/** Commit of the evaluation code itself (and whether it had local changes). */
+function runnerVersion(): { git_sha: string; dirty: boolean } {
+  try {
+    const sha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
+    const dirty = execFileSync('git', ['status', '--porcelain', '--', 'src', 'eval'], { encoding: 'utf8' }).trim().length > 0;
+    return { git_sha: sha, dirty };
+  } catch {
+    return { git_sha: 'unknown', dirty: false };
+  }
+}
+
 function judgeClient(): LLMClient {
   if (JUDGE_PROVIDER === 'anthropic') {
     if (!process.env.ANTHROPIC_API_KEY) throw new Error('JUDGE_PROVIDER=anthropic needs ANTHROPIC_API_KEY');
@@ -257,7 +269,7 @@ async function main() {
     canaries.push(...(await scoreCanaries(judge, records)));
   }
 
-  const meta = { started_at: startedAt, finished_at: new Date().toISOString(), base_url: BASE_URL, generator, judge: flag('skip-judge') ? 'skipped' : `${JUDGE_PROVIDER}:${JUDGE_MODEL}`, runs: RUNS, only: ONLY ? [...ONLY] : null };
+  const meta = { started_at: startedAt, api_version: health.version ?? 'unknown', runner: runnerVersion(), finished_at: new Date().toISOString(), base_url: BASE_URL, generator, judge: flag('skip-judge') ? 'skipped' : `${JUDGE_PROVIDER}:${JUDGE_MODEL}`, runs: RUNS, only: ONLY ? [...ONLY] : null };
 
   writeReport(meta, records, canaries);
 }

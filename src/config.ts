@@ -5,6 +5,10 @@ const ConfigSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default('0.0.0.0'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  /** Commit the running build came from (Docker build arg); reported by /health and recorded in eval reports. */
+  GIT_SHA: z.string().default('dev'),
+  /** Chat turns per minute per authenticated merchant (each turn costs several LLM calls). */
+  CHAT_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(1).default(20),
 
   /** ollama = free local models, no API key (default); anthropic = Claude API. */
   LLM_PROVIDER: z.enum(['anthropic', 'ollama']).default('ollama'),

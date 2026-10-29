@@ -39,7 +39,7 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
     const ok = Object.values(checks).every((c) => c.ok);
     return reply.code(ok ? 200 : 503).send({ status: ok ? 'ready' : 'not_ready', checks });
   });
-  app.get('/health', async () => ({ status: 'ok', knowledge_base_chunks: deps.knowledgeBaseSize, provider: deps.config.LLM_PROVIDER, models }));
+  app.get('/health', async () => ({ status: 'ok', version: deps.config.GIT_SHA, knowledge_base_chunks: deps.knowledgeBaseSize, provider: deps.config.LLM_PROVIDER, models }));
 
   // Demo identity provider (spec §3): in production this is the company's OIDC provider.
   // Limited per client IP + username (after the body is parsed): a UI server logging many users in
@@ -62,7 +62,14 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
     return { access_token: await deps.jwt.issue(principal), token_type: 'Bearer', expires_in: deps.jwt.ttlSeconds, sub: principal.sub, role: principal.role };
   });
 
-  app.post('/chat', { preHandler: requireRole('merchant') }, async (request, reply) => {
+  // Per merchant, after authentication: one user cannot flood the LLMs (cost and availability).
+  const chatLimit = {
+    max: deps.config.CHAT_RATE_LIMIT_PER_MIN,
+    timeWindow: '1 minute',
+    hook: 'preHandler' as const,
+    keyGenerator: (request: { ip: string; principal?: { sub: string } | null }) => request.principal?.sub ?? request.ip,
+  };
+  app.post('/chat', { preHandler: requireRole('merchant'), config: { rateLimit: chatLimit } }, async (request, reply) => {
     const parsed = ChatRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid_request', details: z.flattenError(parsed.error).fieldErrors });
