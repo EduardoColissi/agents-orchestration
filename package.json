@@ -1,0 +1,42 @@
+{
+  "name": "getnet-multi-agent",
+  "version": "2.0.0",
+  "description": "Multi-agent support system for Getnet merchants (Router, Knowledge/RAG, Support, Escalation)",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --disable-warning=ExperimentalWarning dist/main.js",
+    "ingest": "tsx src/rag/ingest.ts",
+    "ingest:prod": "node dist/rag/ingest.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "eval": "tsx eval/run.ts",
+    "hash-password": "tsx scripts/hash-password.ts"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.2.0",
+    "@fastify/rate-limit": "^11.2.1",
+    "@huggingface/transformers": "^4.3.1",
+    "cheerio": "^1.2.0",
+    "fastify": "^5.12.7",
+    "jose": "^6.2.14",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  }
+}

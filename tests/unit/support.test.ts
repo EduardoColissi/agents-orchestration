@@ -1,0 +1,81 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { MockCustomerRepository } from '../../src/support/mockRepository.js';
+import { createSupportTools } from '../../src/support/tools.js';
+import { addBusinessDays } from '../../src/support/dates.js';
+
+const data = JSON.parse(readFileSync('data/customers.json', 'utf8'));
+// Friday 2026-10-23, 12:00 in São Paulo.
+const now = () => new Date('2026-10-23T15:00:00Z');
+const repo = () => new MockCustomerRepository(data, now);
+
+const toolMap = (r: MockCustomerRepository, userId: string) =>
+  Object.fromEntries(createSupportTools(r, userId).map((t) => [t.spec.name, t]));
+
+describe('dates', () => {
+  it('skips weekends when adding business days', () => {
+    expect(addBusinessDays('2026-10-23', 1)).toBe('2026-10-26'); // Fri -> Mon
+    expect(addBusinessDays('2026-10-22', 1)).toBe('2026-10-23'); // Thu -> Fri
+    expect(addBusinessDays('2026-10-22', 0)).toBe('2026-10-22');
+  });
+});
+
+describe('MockCustomerRepository', () => {
+  it('materializes relative dates against the clock', async () => {
+    const txs = await repo().getTransactions('cliente1988', { lastDays: 1 });
+    expect(txs.every((t) => t.date === '2026-10-23' || t.date === '2026-10-22')).toBe(true);
+  });
+
+  it("groups yesterday's approved sales into settlements by payment method", async () => {
+    const settlements = await repo().getSettlements('cliente1988', { saleDate: '2026-10-22' });
+    const credit = settlements.find((s) => s.method === 'credit')!;
+    expect(credit.grossAmount).toBe(438.9); // 128.90 + 310.00 (declined TX-1005 excluded)
+    expect(credit.expectedDate).toBe('2026-10-23');
+    expect(credit.status).toBe('scheduled');
+    expect(settlements.find((s) => s.method === 'pix')!.status).toBe('paid');
+  });
+
+  it('returns null / empty for unknown customers', async () => {
+    expect(await repo().getCustomer('ghost')).toBeNull();
+    expect(await repo().getTransactions('ghost')).toEqual([]);
+  });
+});
+
+describe('support tools', () => {
+  it('exposes the five tools required by the spec (FR5)', () => {
+    expect(Object.keys(toolMap(repo(), 'cliente1988')).sort()).toEqual(
+      ['create_support_ticket', 'get_customer_profile', 'get_settlements', 'get_terminal_status', 'get_transactions'],
+    );
+  });
+
+  it('enriches declined transactions with code meaning and action', async () => {
+    const out = await toolMap(repo(), 'cliente1988').get_transactions!.execute({ status: 'declined' });
+    const body = JSON.parse(out.content);
+    expect(body.count).toBe(2);
+    expect(body.transactions[0].decline.meaning).toMatch(/issuer/i);
+  });
+
+  it('reports terminal diagnostics', async () => {
+    const out = await toolMap(repo(), 'cliente1988').get_terminal_status!.execute({});
+    expect(JSON.parse(out.content).terminals[0]).toMatchObject({ status: 'offline', model: 'Get Smart' });
+  });
+
+  it('is bound to the request user and cannot read another customer (FR6)', async () => {
+    const tools = toolMap(repo(), 'cliente1988');
+    // Even if the model tries to pass another user id, the schema ignores it and the bound id is used.
+    const out = await tools.get_customer_profile!.execute({ user_id: 'cliente2000' });
+    expect(JSON.parse(out.content).userId).toBe('cliente1988');
+  });
+
+  it('rejects invalid input instead of throwing', async () => {
+    const out = await toolMap(repo(), 'cliente1988').get_settlements!.execute({ sale_date: 'yesterday' });
+    expect(out.isError).toBe(true);
+  });
+
+  it('creates tickets for the bound user', async () => {
+    const r = repo();
+    const out = await toolMap(r, 'cliente1988').create_support_ticket!.execute({ category: 'connectivity', summary: 'Machine offline after restart' });
+    expect(JSON.parse(out.content).ticket_id).toMatch(/^TCK-/);
+    expect(r.listTickets('cliente1988')).toHaveLength(1);
+  });
+});
