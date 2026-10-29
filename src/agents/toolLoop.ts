@@ -102,6 +102,7 @@ export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResul
       if (call === gated) continue;
       toolsUsed.push(call.name);
       const tool = byName.get(call.name);
+      const toolStarted = performance.now();
       let result: ToolResultContent;
       if (!tool) {
         result = { type: 'tool_result', tool_use_id: call.id, content: `Unknown tool: ${call.name}`, is_error: true };
@@ -115,7 +116,7 @@ export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResul
         }
       }
       results.push(result);
-      evidence.push({ name: call.name, input: call.input, output: maskPII(result.content).text.slice(0, EVIDENCE_MAX_CHARS), isError: result.is_error === true });
+      evidence.push({ name: call.name, input: call.input, output: maskPII(result.content).text.slice(0, EVIDENCE_MAX_CHARS), isError: result.is_error === true, durationMs: Math.round(performance.now() - toolStarted) });
     }
     if (gated) {
       toolsUsed.push(gated.name);

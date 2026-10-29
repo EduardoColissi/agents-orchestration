@@ -12,6 +12,7 @@ import { addUsage, emptyUsage, type Agent, type AgentName, type AgentResult, typ
 import { dedupeSources } from './agents/toolLoop.js';
 import { newHandoffId, type HandoffKind } from './store/handoffs.js';
 import { decideNext, MAX_PLAN_STEPS, type PlanStep, type Replan } from './orchestration/replanner.js';
+import type { Span } from './store/spans.js';
 
 export interface ChatRequest {
   message: string;
@@ -56,6 +57,8 @@ export interface OrchestratorTurn {
   evidence: TurnEvidence;
   /** A new handoff to put in the operator queue (persisted with the turn). */
   handoffRequest: HandoffRequestSpec | null;
+  /** Per-stage spans (router, agents, tools/RAG, personality) for persistent traces. */
+  spans: Span[];
 }
 
 export interface HandoffRequestSpec {
@@ -75,6 +78,7 @@ interface TurnState {
   openHandoff: ChatRequest['openHandoff'];
   handoffRequest: HandoffRequestSpec | null;
   replans: Replan[];
+  spans: Span[];
 }
 
 export interface OrchestratorDeps {
@@ -111,13 +115,14 @@ export class Orchestrator {
   }
 
   async handle(request: ChatRequest): Promise<OrchestratorTurn> {
-    const turn: TurnState = { message: request.message, decision: null, standaloneQuery: null, results: [], openHandoff: request.openHandoff ?? null, handoffRequest: null, replans: [] };
+    const turn: TurnState = { message: request.message, decision: null, standaloneQuery: null, results: [], openHandoff: request.openHandoff ?? null, handoffRequest: null, replans: [], spans: [] };
     const response = await this.run(request, turn);
     response.handoff = { handoff_id: null, kind: null, status: null, ...response.handoff };
     if (turn.replans.length) response.replans = turn.replans;
     return {
       response,
       handoffRequest: turn.handoffRequest,
+      spans: turn.spans,
       maskedMessage: turn.message,
       inContext: response.route !== 'blocked',
       evidence: {
@@ -161,6 +166,7 @@ export class Orchestrator {
     const { decision, fallback, error } = routed.value;
     usage = addUsage(usage, routed.value.usage);
     turn.decision = fallback ? null : decision;
+    turn.spans.push({ stage: 'router', name: 'router', durationMs: routed.ms, inputTokens: routed.value.usage.inputTokens, outputTokens: routed.value.usage.outputTokens, status: fallback ? 'error' : 'ok', attrs: { route: decision.route, confidence: decision.confidence } });
     // Follow-ups are rewritten by the Router; the rewrite goes through the input guardrail too.
     const query = decision.standalone_query?.trim() || message;
     turn.standaloneQuery = query === message ? null : query;
@@ -210,6 +216,10 @@ export class Orchestrator {
         );
         results.push(run.value);
         executed.push(step);
+        turn.spans.push({ stage: 'agent', name: step, durationMs: run.ms, inputTokens: run.value.usage.inputTokens, outputTokens: run.value.usage.outputTokens, status: 'ok', attrs: { tools: run.value.toolsUsed } });
+        for (const t of run.value.evidence ?? []) {
+          turn.spans.push({ stage: t.name === 'search_knowledge_base' ? 'rag' : 'tool', name: t.name, durationMs: t.durationMs ?? 0, status: t.isError ? 'error' : 'ok', attrs: { agent: step } });
+        }
         usage = addUsage(usage, run.value.usage);
         log.info(
           { stage: 'agent', agent: step, latency_ms: run.ms, tools: run.value.toolsUsed, sources: run.value.sources.length, tokens: run.value.usage, handoff: run.value.handoff?.reason },
@@ -227,6 +237,7 @@ export class Orchestrator {
         }
       } catch (err) {
         log.error({ stage: 'agent', agent: step, err }, 'agent failed');
+        turn.spans.push({ stage: 'agent', name: step, durationMs: 0, status: 'error', attrs: { error: (err as Error).message.slice(0, 200) } });
         return this.escalate(turn, log, started, traceId, usage, executed, { userId: request.userId, language, reason: 'agent_error', message, results });
       }
     }
@@ -323,6 +334,7 @@ export class Orchestrator {
     const styled = await timed(() => this.deps.personality.apply(r.answer, r.language));
     usage = addUsage(usage, styled.value.usage);
     if (styled.value.applied) r.agents.push('personality');
+    if (styled.value.reason !== 'disabled') turn.spans.push({ stage: 'personality', name: 'personality', durationMs: styled.ms, inputTokens: styled.value.usage.inputTokens, outputTokens: styled.value.usage.outputTokens, status: styled.value.applied ? 'ok' : 'error', attrs: { reason: styled.value.reason ?? null } });
     log.info({ stage: 'personality', agent: 'personality', latency_ms: styled.ms, applied: styled.value.applied, reason: styled.value.reason, tokens: styled.value.usage }, 'personality applied');
 
     const response: ChatResponse = {

@@ -6,6 +6,7 @@ import { transaction, type Db } from '../store/db.js';
 import { buildContextBlock } from '../memory/context.js';
 import { compact } from '../memory/compaction.js';
 import { HandoffAlreadyOpenError, type HandoffStore } from '../store/handoffs.js';
+import type { SpanStore } from '../store/spans.js';
 
 export class ConversationNotFoundError extends Error {}
 export class ConversationBusyError extends Error {}
@@ -15,6 +16,7 @@ export interface ChatServiceDeps {
   orchestrator: Orchestrator;
   conversations: ConversationStore;
   handoffs: HandoffStore;
+  spans: SpanStore;
   audit: AuditLog;
   handoffTtlMinutes: number;
 }
@@ -44,6 +46,10 @@ export class ChatService {
         this.deps.conversations.addMessage({ ...base, role: 'assistant', content: turn.response.answer, route: turn.response.route, evidence: turn.evidence });
         const compacted = compact(conversation.summary, conversation.summarizedUpto, this.deps.conversations.messages(conversation.id, { inContextOnly: true }));
         if (compacted) this.deps.conversations.updateSummary(conversation.id, compacted.summary, compacted.summarizedUpto);
+        this.deps.spans.record(input.traceId, conversation.id, [
+          ...turn.spans,
+          { stage: 'turn', name: 'chat', durationMs: turn.response.latency_ms, status: 'ok', attrs: { route: turn.response.route, handoff_required: turn.response.handoff.required } },
+        ]);
         const h = turn.handoffRequest;
         if (h) {
           try {

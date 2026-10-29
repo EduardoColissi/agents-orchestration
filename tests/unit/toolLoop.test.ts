@@ -54,7 +54,7 @@ describe('runToolLoop', () => {
     const echo: AgentTool = { spec: { name: 'echo', description: '', inputSchema: {} }, execute: async () => ({ content: 'card 4111 1111 1111 1111' }) };
     const out = await runToolLoop({ llm, model: 'm', system: 's', userMessage: 'q', tools: [echo], maxIterations: 2 });
     expect(out.text).toBe('done');
-    expect(out.evidence).toEqual([{ name: 'echo', input: { v: 1 }, output: expect.not.stringContaining('4111 1111'), isError: false }]);
+    expect(out.evidence).toEqual([{ name: 'echo', input: { v: 1 }, output: expect.not.stringContaining('4111 1111'), isError: false, durationMs: expect.any(Number) }]);
     expect(llm.calls[0]!.toolChoice).toBeUndefined();
     expect(llm.calls[1]!.toolChoice).toBe('none');
   });

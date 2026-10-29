@@ -48,6 +48,7 @@ export interface ToolEvidence {
   input: unknown;
   output: string;
   isError: boolean;
+  durationMs?: number;
 }
 
 export interface HandoffRequest {

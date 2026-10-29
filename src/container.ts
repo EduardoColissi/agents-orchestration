@@ -21,6 +21,7 @@ import { ConversationStore } from './store/conversations.js';
 import { ChatService } from './chat/service.js';
 import { HandoffStore } from './store/handoffs.js';
 import { HitlService } from './hitl/service.js';
+import { SpanStore } from './store/spans.js';
 import { JwtService } from './auth/jwt.js';
 import { CredentialStore } from './auth/credentials.js';
 import { resolveJwtSecret } from './auth/secret.js';
@@ -38,6 +39,7 @@ export interface AppDeps {
   chat: ChatService;
   handoffs: HandoffStore;
   hitl: HitlService;
+  spans: SpanStore;
   now: () => Date;
   /** Readiness: database, knowledge base and the LLM provider with its models (GET /ready). */
   readiness: () => Promise<Record<string, { ok: boolean; detail?: string }>>;
@@ -114,7 +116,8 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
 
   const conversations = new ConversationStore(db, now);
   const handoffs = new HandoffStore(db, now);
-  const chat = new ChatService({ db, orchestrator, conversations, handoffs, audit, handoffTtlMinutes: config.HANDOFF_TTL_MINUTES });
+  const spans = new SpanStore(db, now);
+  const chat = new ChatService({ db, orchestrator, conversations, handoffs, spans, audit, handoffTtlMinutes: config.HANDOFF_TTL_MINUTES });
   const support = orchestrator.agents.support as SupportAgent;
   support.useAudit(audit);
   const hitl = new HitlService({ db, handoffs, conversations, audit, logger, approvals: support });
@@ -131,7 +134,7 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
     return { database, knowledge_base: { ok: store.size > 0, detail: `${store.size} chunks` }, llm: await llmReadiness(config, !!opts.llm) };
   };
 
-  return { config, orchestrator, logger, knowledgeBaseSize: store.size, db, audit, jwt, credentials, conversations, chat, handoffs, hitl, now, readiness };
+  return { config, orchestrator, logger, knowledgeBaseSize: store.size, db, audit, jwt, credentials, conversations, chat, handoffs, hitl, spans, now, readiness };
 }
 
 async function llmReadiness(config: Config, injected: boolean): Promise<{ ok: boolean; detail?: string }> {

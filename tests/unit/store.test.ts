@@ -23,7 +23,7 @@ describe('SQLite store', () => {
     first.close();
 
     const reopened = openDb(path);
-    expect((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(1);
+    expect((reopened.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(2);
     expect(new TicketStore(reopened).list('cliente1988').map((t) => t.summary)).toEqual(['persist me']);
     reopened.close();
   });
