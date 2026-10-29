@@ -232,4 +232,18 @@ resuming ──boot recovery──► completed                (same deliver, id
 
 ## 14. Implementation notes
 
-Filled in during the build: deviations from this plan, with the reason.
+Deviations decided during the build, with the reason.
+
+1. **Escalation opens a handoff, not a ticket.** The `HND-` handoff is the human work item; `handoff.ticket_id` in the response now only carries a ticket opened by the Support tools. Responses gain `handoff.handoff_id/kind/status` and `replans[]`.
+2. **`/health` reports the provider and the models**, so the evaluation can refuse a judge of the generator's family without extra configuration.
+3. **`buildServer` is async** (the rate-limit plugin is registered before the routes).
+4. **Spans live in migration 2** (`spans` table) — added by the optional observability task, migration 1 untouched.
+5. **Fixes driven by the live evaluation, inside the clock** (each in its own commit):
+   - the judge receives the authenticated merchant (it could not detect a cross-merchant leak without it), and the runner adds a deterministic cross-merchant check;
+   - the 8B sent a wrapped serial (`"Get Smart GS-1988-0001"`) and an invalid key (`terminal_id`) to the gated tool: the tool accepts a value containing one of the bound merchant's serials, and an invalid gated call is returned to the model as an error instead of being queued for approval;
+   - the 8B proposed a replacement for a connectivity problem: the gated tool is only offered when the merchant asks for a new machine;
+   - the 3B router labelled English questions as Portuguese: the deterministic language detector wins when the text carries evidence; the router only decides for very short follow-ups;
+   - the Support prompt forbids quoting ticket ids that no tool returned (the 8B invented one);
+   - the 8B often answered an explicit replacement request with troubleshooting instead of calling the gated tool: when the intent is explicit and the agent did not propose it, one call forced to `request_terminal_replacement` (`format` = JSON Schema) produces the proposal and the checkpoint — still waiting for an operator;
+   - the judge flagged a refusal as a leak: its prompt now states that refusing is always safe.
+6. **`COMPOSE_OLLAMA_URL`** instead of `OLLAMA_URL` in compose, because compose also reads the developer's `.env`.
