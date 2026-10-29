@@ -74,7 +74,7 @@ npm run ingest             # optional: rebuild data/index.json from the web
 ### Tests and evaluation
 
 ```bash
-npm test                   # 146 tests, offline, scripted fake LLM, SQLite in memory
+npm test                   # 153 tests, offline, scripted fake LLM, SQLite in memory
 npm run typecheck
 npm run eval -- --runs 3   # semantic evaluation of the running API (EVAL_BASE_URL, default localhost:3000)
 docker compose --profile eval run --rm eval --runs 3     # same, using only Docker
@@ -176,39 +176,42 @@ resuming ──boot recovery──► completed         (same delivery, idempote
 
 ### Results
 
-The full golden set (22 cases × 3 runs) against the Docker stack with GPU, twice: with the code at `v2-clock-end` and with the final code (post-clock review fixes). Each run was scored by both judges with `--rejudge`, on identical answers.
+The full golden set (22 cases × 3 runs at the clock end; 23 with the replanning case later) against the Docker stack with GPU, each run scored by both judges with `--rejudge` on identical answers. Every report records the API build and the runner commit.
 
 **Deterministic checks** (judge-independent)
 
-| Check | Clock-end code | Final code |
+| Check | Clock-end code (`v2-clock-end`) | Final code (`be33529`) |
 |---|---|---|
-| route · plan · tools · standalone query | 1.0 · 1.0 · 1.0 · 1.0 | 1.0 · 1.0 · 1.0 · 1.0 |
+| route · plan · tools | 1.0 · 1.0 · 1.0 | 1.0 · 1.0 · 1.0 |
+| follow-up rewrite · **no rewrite on single messages** | 1.0 · *(not checked)* | 1.0 · **1.0** |
+| replanning fired (case R1) | *(no case)* | **1.0** |
 | HITL: approval proposed · operator resolve · outcome delivered | 0.78 · 0.92 · 0.83 | **1.0 · 1.0 · 1.0** |
+| handoff as expected (live-data questions do not reach the queue) | 1.0 | 1.0 |
 | authorization (403 `user_mismatch`, 404 foreign conversation) · no cross-merchant data | 1.0 · 1.0 | 1.0 · 1.0 |
-| sources | 0.71 | 0.71 — the two web cases: DuckDuckGo answers this network with a bot challenge |
-| latency p50 · p95 | 3.8 s · 19.1 s | 3.1 s · 15.9 s |
+| sources | 0.71 | 0.71 — only the two web cases: DuckDuckGo answers this network with a bot challenge |
+| latency p50 · p95 | 3.8 s · 19.1 s | 5.2 s · 19.1 s |
 
-**Judges** (1–5; mean over 60 records, ± stdev in the reports)
+**Judges** (1–5, mean over the judged records; spread in the reports)
 
 | Metric | qwen2.5:7b, local · clock-end / final | **Claude Sonnet, reference** · clock-end / final |
 |---|---|---|
-| groundedness | 4.50 / 4.38 | **3.37 / 3.40** |
-| correctness (vs reference facts) | 4.62 / 4.62 | **2.87 / 3.00** |
-| relevance | 4.65 / 4.77 | **3.90 / 4.00** |
-| helpfulness | 4.48 / 4.57 | **2.80 / 2.86** |
+| groundedness | 4.50 / 4.25 | **3.37 / 3.87** |
+| correctness (vs reference facts) | 4.62 / 4.45 | **2.87 / 3.28** |
+| relevance | 4.65 / 4.68 | **3.90 / 4.11** |
+| helpfulness | 4.48 / 4.50 | **2.80 / 2.96** |
 | safety pass rate | 0.85 / 0.77 | **1.0 / 1.0** |
 | canaries caught | 2/4 → `judge_unreliable` | **4/4** |
 
 How to read it:
 
-- **The canaries did their job.** The local 7B judge misses known defects and flags the merchant's *own* masked bank account as unsafe; it inflates every score by about one point. Claude catches all four canaries and raises no false safety alarm, so it is the reference. The local judge stays as the free default (and the baseline), and the gate compares rubric scores only against a baseline from the same judge.
-- **What the reference judge says about the system on local models:** account support is the strongest part (groundedness 4.0 — it reads the tools); RAG answers are on-topic but incomplete (correctness 2.6) — e.g. the Pix answer says no bank account is needed, the advance answer confuses *gravame* with advance, the comparison omits the rental prices. That is the ceiling of `llama3.1:8b` on a 12 GB GPU; `LLM_PROVIDER=anthropic` switches the same pipeline to Claude.
-- **The final code fixed what the clock-end run exposed** in the deterministic layer (replacement proposals and approvals now 1.0); answer quality is unchanged because the model is the same.
-- HITL outcome groundedness is not meaningful yet: the evidence of the *resumed* run is not stored, so the judge sees the decision without the tool output behind it (next step).
+- **The canaries did their job.** The local 7B judge misses known defects, flags the merchant's *own* masked bank account as unsafe and inflates scores by about a point. Claude catches all four canaries without false safety alarms, so it is the reference: **`eval/baseline.json` comes from the Claude-judged final run**. The gate compares rubric scores only against a baseline from the same judge, and deterministic checks always (the gate caught a regression during the post-clock work: [handoff 0.905](eval/reports/2026-10-29T18-43-11-441Z.md), fixed in `be33529`).
+- **What changed between the two runs** comes from the post-clock fixes, all in the deterministic layer around the same models: the router no longer copies its prompt example into single messages (that was misrouting replacement requests and mixing languages), approval outcomes always state the decision and the ticket (HITL groundedness/correctness by Claude: 4.8 / 5.0), live-data questions no longer reach the human queue, and replanning now fires.
+- **What the reference judge still says:** account support is strong (groundedness 4.2), HITL outcomes are correct, but RAG answers on `llama3.1:8b` are often incomplete or wrong (correctness 2.9 — e.g. the Pix answer says no bank account is needed, the advance answer confuses *gravame*, the comparison omits the rental prices). That is the quality ceiling of the 8B on a 12 GB GPU, not of the pipeline; `LLM_PROVIDER=anthropic` runs the same pipeline on Claude.
+- Operator-written replies are checked deterministically but not judged (they are a person's text, not the system's output).
 
-Reports: [clock-end, qwen](eval/reports/2026-10-29T16-37-18-256Z.md) · [clock-end, Claude](eval/reports/2026-10-29T16-56-11-834Z.md) · [final, qwen = baseline](eval/reports/2026-10-29T17-02-24-599Z.md) · [final, Claude](eval/reports/2026-10-29T17-06-34-793Z.md). Operational metrics after these runs: [`docs/evidence/metrics.json`](docs/evidence/metrics.json) (the escalation rate is high by design: a third of the golden set exercises the human queue).
+Reports: clock-end [qwen](eval/reports/2026-10-29T16-37-18-256Z.md) / [Claude](eval/reports/2026-10-29T16-56-11-834Z.md) (its gate failure was the cross-judge comparison fixed in `0f872f7`) · final [qwen](eval/reports/2026-10-29T18-56-50-574Z.md) / [Claude = baseline](eval/reports/2026-10-29T19-00-39-798Z.md). Operational metrics: [`docs/evidence/metrics.json`](docs/evidence/metrics.json) (the escalation rate is high by design: a third of the golden set exercises the human queue).
 
-The development runs inside the clock ([`eval/reports/2026-10-29T16-*`](eval/reports)) found real model behaviours that unit tests with a fake LLM cannot: the 3B router labelling English as Portuguese, the 8B inventing a ticket number, wrapping or misnaming the serial of the gated tool, and proposing a replacement for a connectivity problem. Each became a fix with a test (plan §14). v1's real run (Claude, 15/15 lexical) is in [`eval/history/`](eval/history).
+The development runs inside the clock ([`eval/reports/2026-10-29T16-1*`, `16-2*`](eval/reports)) found real model behaviours that unit tests with a fake LLM cannot: the 3B router labelling English as Portuguese, the 8B inventing a ticket number, wrapping or misnaming the serial of the gated tool, and proposing a replacement for a connectivity problem. Each became a fix with a test (plan §14). An independent re-evaluation after the clock found the router copying its own example — fixed and now checked on every single-turn case. v1's real run (Claude, 15/15 lexical) is in [`eval/history/`](eval/history).
 
 ## Observability
 

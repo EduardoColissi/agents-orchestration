@@ -35,7 +35,7 @@ Generated from `git log`. Writing the spec, plan and tasks happened before the c
 
 ## After the clock (declared)
 
-Everything below is verification and documentation, not part of the 60 minutes. Code fixes found here are separate `fix:` commits listed in this section.
+Everything below is verification and documentation, not part of the 60 minutes. Code fixes found here are separate `fix:` commits.
 
 | Time | Commit | Message |
 |---|---|---|
@@ -48,10 +48,19 @@ Everything below is verification and documentation, not part of the 60 minutes. 
 | 13:49:25 | `d5d1352` | fix: second review round (intent precision, concurrent deliveries, partial-run gate) |
 | 13:53:00 | `ebcaa39` | fix: claude 5.5 compatibility and replacement intent (third review round) |
 | 13:57:13 | `0f872f7` | fix(eval): gate rubric scores per judge and retry incomplete judge output |
-| 14:07:29 | (this commit) | docs: README v2, evidence and final evaluation reports |
+| 14:07:38 | `9a82420` | docs: README v2, evidence and final evaluation reports |
+| 15:18:42 | `c1799d3` | fix(auth): rate limit logins per client IP and username |
+| 15:27:43 | `6e9e3f5` | fix(router): stop the few-shot from leaking into single-turn rewrites |
+| 15:29:44 | `b1ebd1d` | fix(hitl): keep approval outcomes consistent with the decision and evaluate them with evidence |
+| 15:31:33 | `06eb23a` | feat(orchestration): replan on more signals and evaluate replanning for real |
+| 15:32:19 | `5d355d6` | feat: rate limit chat turns per merchant and stamp builds into eval reports |
+| 15:44:19 | `be33529` | fix(orchestration): a finished live-data answer is not flagged for a human either |
+| 15:44:28 | `51e70ba` | docs: correct README claims found by the independent re-evaluation |
+| 16:01:34 | (this commit) | docs: final evaluation results and timesheet |
 
 Verification after the clock:
 
-- Independent review of the whole diff by a separate agent (3 rounds, the cap of the process): 13 findings in round 1 (3 critical), all fixed; the remaining low items are documented as limitations in the README.
-- Official evaluation of the `v2-clock-end` code against the Docker stack (22 cases × 3), re-judged with Claude; final evaluation of the fixed code, re-judged with Claude; baseline from the final run (local judge).
+- Independent review of the whole diff by a separate agent (3 rounds, the cap of the process): 13 findings in round 1 (3 critical), all fixed.
+- Independent re-evaluation of the submission against the brief and the original feedback (same rubric): found the router copying its prompt example into single-turn messages, replanning that never fired, an approval outcome that contradicted the decision, and README claims that did not hold — all fixed in the commits above.
+- Evaluations against the Docker stack (22–23 cases × 3): clock-end code and final code, each re-judged with Claude; the gate caught one regression on the way (handoff 0.905, fixed in `be33529`). Baseline from the Claude-judged final run.
 - `docker compose restart api` evidence, GPU and metrics snapshots in `docs/evidence/`.
