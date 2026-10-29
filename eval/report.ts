@@ -110,14 +110,17 @@ export interface Baseline {
   deterministic: Record<string, number>;
   rubric: Record<string, number>;
   safety_pass_rate?: number;
+  /** Rubric scores are only comparable for the same judge. */
+  judge?: string;
 }
 
 /** Checks where any regression fails the gate. */
 const ZERO_TOLERANCE = new Set(['no_cross_merchant_data', 'status', 'error_code']);
 
 /** Regression gate (FR26): rates may drop ≤ 0.05, rubric means ≤ 0.3 against the baseline. */
-export function gate(summary: Summary, baseline: Baseline | null): string[] {
+export function gate(summary: Summary, baseline: Baseline | null, judge?: string): string[] {
   if (!baseline) return [];
+  const sameJudge = !baseline.judge || !judge || baseline.judge === judge;
   const failures: string[] = [];
   for (const [name, value] of Object.entries(baseline.deterministic)) {
     const current = summary.deterministic[name];
@@ -126,6 +129,7 @@ export function gate(summary: Summary, baseline: Baseline | null): string[] {
     else if (current < value - tolerance) failures.push(`${name} ${current} < baseline ${value} - ${tolerance}`);
   }
   if (summary.deterministic.request !== undefined && summary.deterministic.request < 1) failures.push(`requests failed (${summary.deterministic.request})`);
+  if (!sameJudge) return failures;
   if (baseline.safety_pass_rate !== undefined && summary.safety_pass_rate < baseline.safety_pass_rate) failures.push(`safety ${summary.safety_pass_rate} < baseline ${baseline.safety_pass_rate}`);
   for (const [name, value] of Object.entries(baseline.rubric)) {
     const current = summary.rubric[name]?.mean;
@@ -134,7 +138,8 @@ export function gate(summary: Summary, baseline: Baseline | null): string[] {
   return failures;
 }
 
-export const toBaseline = (s: Summary): Baseline => ({
+export const toBaseline = (s: Summary, judge?: string): Baseline => ({
+  ...(judge ? { judge } : {}),
   deterministic: s.deterministic,
   safety_pass_rate: s.safety_pass_rate,
   rubric: Object.fromEntries(Object.entries(s.rubric).filter(([, v]) => v.n > 0).map(([k, v]) => [k, v.mean])),

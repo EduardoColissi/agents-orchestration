@@ -63,4 +63,14 @@ describe('gate strictness', () => {
     expect(gate(leaking, baseline)).toEqual(expect.arrayContaining([expect.stringContaining('no_cross_merchant_data 0 < baseline 1 - 0')]));
   });
 });
+
+describe('gate across judges', () => {
+  it('compares rubric scores only when the baseline was produced by the same judge', () => {
+    const strong = summarize([record('1', 1, true, scores(5))], []);
+    const baseline = toBaseline(strong, 'ollama:qwen2.5:7b');
+    const strictJudge = summarize([record('1', 1, true, scores(3))], []);
+    expect(gate(strictJudge, baseline, 'anthropic:claude-sonnet-5-5')).toEqual([]);
+    expect(gate(strictJudge, baseline, 'ollama:qwen2.5:7b').length).toBeGreaterThan(0);
+  });
+});
 });

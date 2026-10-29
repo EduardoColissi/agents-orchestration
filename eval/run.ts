@@ -184,13 +184,15 @@ function writeReport(meta: Record<string, unknown>, records: RunRecord[], canari
   const summary = summarize(records, canaries);
   const baseline = existsSync('eval/baseline.json') ? (JSON.parse(readFileSync('eval/baseline.json', 'utf8')) as Baseline) : null;
   // A partial run (--only) lacks the checks of the skipped cases: the gate only compares full runs.
-  const gateFailures = flag('update-baseline') || flag('only') ? [] : gate(summary, baseline);
+  const judge = String(meta.judge);
+  const gateFailures = flag('update-baseline') || flag('only') ? [] : gate(summary, baseline, judge);
+  if (baseline?.judge && baseline.judge !== judge) console.log(`Rubric not gated: baseline judge ${baseline.judge}, this run ${judge}.`);
   if (flag('only') && baseline) console.log('Gate skipped: partial run (--only).');
   mkdirSync('eval/reports', { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   writeFileSync(`eval/reports/${stamp}.json`, `${JSON.stringify({ meta, summary, gate: gateFailures, canaries, records }, null, 2)}\n`);
   writeFileSync(`eval/reports/${stamp}.md`, renderMarkdown(meta, summary, records, canaries, gateFailures));
-  if (flag('update-baseline')) writeFileSync('eval/baseline.json', `${JSON.stringify(toBaseline(summary), null, 2)}\n`);
+  if (flag('update-baseline')) writeFileSync('eval/baseline.json', `${JSON.stringify(toBaseline(summary, judge), null, 2)}\n`);
   console.log(`\n${JSON.stringify({ rubric: summary.rubric, deterministic: summary.deterministic, safety: summary.safety_pass_rate, judge_unreliable: summary.judge_unreliable, latency_ms: summary.latency_ms }, null, 1)}`);
   console.log(`Report: eval/reports/${stamp}.md`);
   if (gateFailures.length) {

@@ -47,7 +47,16 @@ export function familyOf(model: string): string {
 export class Judge {
   constructor(private readonly llm: LLMClient, readonly model: string) {}
 
+  /** One retry: models that cannot be forced to the tool sometimes return incomplete JSON. */
   async score(input: JudgeInput): Promise<Scores> {
+    try {
+      return await this.scoreOnce(input);
+    } catch {
+      return this.scoreOnce(input);
+    }
+  }
+
+  private async scoreOnce(input: JudgeInput): Promise<Scores> {
     const content = [
       `<authenticated_merchant>${input.merchant}</authenticated_merchant>`,
       `<conversation>\n${input.turns.map((t, i) => `merchant (turn ${i + 1}): ${t}`).join('\n')}\n</conversation>`,
