@@ -199,4 +199,20 @@ describe('approval guard rails', () => {
     expect(body.answer).toContain("I've handed your request");
   });
 });
+
+  it('explicit replacement request: when the model only answers, a constrained call proposes the gated action', async () => {
+    const llm = scriptedLLM({
+      router: [route({ route: 'support', plan: ['support'], language: 'pt' })],
+      support: [
+        { toolCalls: [{ name: 'get_terminal_status', input: {} }] },
+        { text: 'Sua máquina está offline. Tente reiniciar.' },
+        { toolCalls: [{ name: 'request_terminal_replacement', input: { serial: 'GS-1988-0001', reason: 'offline for days' } }] },
+      ],
+    });
+    const t = await buildTestApp(llm);
+    const body = await chat(t, 'Minha Get Smart GS-1988-0001 está offline faz dias, quero trocar por uma nova');
+    expect(body.handoff).toMatchObject({ kind: 'approval', status: 'pending' });
+    expect(llm.calls.at(-1)!.forceTool).toBe('request_terminal_replacement');
+    expect(t.repo.listTickets()).toHaveLength(0);
+  });
 });

@@ -8,7 +8,7 @@ import type { ApprovalResumer } from '../hitl/service.js';
 import type { AuditLog } from '../store/audit.js';
 import type { Handoff } from '../store/handoffs.js';
 import { supportPrompt } from './prompts.js';
-import { runToolLoop, type AgentTool } from './toolLoop.js';
+import { runToolLoop, type AgentTool, type ToolLoopInterrupt, type ToolLoopResult } from './toolLoop.js';
 import { withConversation } from './knowledge.js';
 
 export interface SupportAgentOptions {
@@ -100,7 +100,7 @@ export class SupportAgent implements Agent, ApprovalResumer {
     const today = localDate(this.options.now?.() ?? new Date());
     const yesterday = addDays(today, -1);
     const system = supportPrompt({ today, yesterday, weekday: weekdayName(today), language: ctx.language, customerName: customer.businessName, hasNextStep: ctx.nextSteps.length > 0 });
-    const result = await runToolLoop({
+    let result = await runToolLoop({
       llm: this.llm,
       model: this.options.model,
       system,
@@ -109,6 +109,13 @@ export class SupportAgent implements Agent, ApprovalResumer {
       maxIterations: this.options.maxIterations,
       maxTokens: 1000,
     });
+
+    // The merchant explicitly asked for a new machine but the model answered without proposing it
+    // (llama3.1:8b does this often): one schema-constrained call proposes it, still gated by an operator.
+    if (!result.interrupt && wantsReplacement && !result.toolsUsed.includes('request_terminal_replacement')) {
+      const forced = await this.proposeReplacement(system, result, tools);
+      if (forced) result = { ...result, interrupt: forced, toolsUsed: [...result.toolsUsed, forced.pendingCall.name] };
+    }
 
     const base = { agent: this.name, sources: [], toolsUsed: result.toolsUsed, usage: result.usage, evidence: result.evidence };
     if (result.interrupt) {
@@ -125,6 +132,24 @@ export class SupportAgent implements Agent, ApprovalResumer {
       ...(ticketId ? { handoff: { reason: 'support_ticket_opened', ticketId } } : {}),
       ...(!ticketId && (result.hitIterationLimit || !result.text) ? { handoff: { reason: 'support_agent_incomplete' } } : {}),
     };
+  }
+
+  private async proposeReplacement(system: string, result: ToolLoopResult, tools: AgentTool[]): Promise<ToolLoopInterrupt | null> {
+    const gated = tools.find((t) => t.requiresApproval);
+    if (!gated) return null;
+    const messages = [
+      ...result.messages,
+      { role: 'assistant' as const, content: result.text || '(no answer)' },
+      { role: 'user' as const, content: 'The merchant explicitly asked for a replacement machine. Request it now with request_terminal_replacement, using the serial returned by get_terminal_status.' },
+    ];
+    try {
+      const response = await this.llm.complete({ model: this.options.model, system, messages, tools: [gated.spec], forceTool: gated.spec.name, maxTokens: 300 });
+      const call = response.toolCalls.find((c) => c.name === gated.spec.name);
+      if (!call || gated.validate?.(call.input)) return null;
+      return { pendingCall: { id: call.id, name: call.name, input: call.input }, siblingResults: [], messages: [...messages, { role: 'assistant', content: response.assistantContent }] };
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -154,7 +179,7 @@ export class SupportAgent implements Agent, ApprovalResumer {
     // A checkpoint is only valid for the provider and model that produced it.
     if (checkpoint.provider !== (this.options.provider ?? 'unknown') || checkpoint.model !== this.options.model) return fallback;
     try {
-      const result = await runToolLoop({
+      let result = await runToolLoop({
         llm: this.llm,
         model: this.options.model,
         system: checkpoint.system,

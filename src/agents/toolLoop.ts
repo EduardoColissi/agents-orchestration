@@ -46,6 +46,8 @@ export interface ToolLoopResult {
   iterations: number;
   hitIterationLimit: boolean;
   evidence: ToolEvidence[];
+  /** Conversation with the model before the final answer (lets a caller continue it). */
+  messages: LLMMessage[];
   /** Set when the model called an approval-gated tool: the loop stopped before running it. */
   interrupt?: ToolLoopInterrupt;
 }
@@ -94,7 +96,7 @@ export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResul
     if (response.usage.webSearches > 0) toolsUsed.push('web_search');
 
     if (response.toolCalls.length === 0) {
-      return { text: response.text, toolsUsed: unique(toolsUsed), sources: dedupeSources(sources), usage, iterations: iteration, hitIterationLimit: false, evidence };
+      return { text: response.text, toolsUsed: unique(toolsUsed), sources: dedupeSources(sources), usage, iterations: iteration, hitIterationLimit: false, evidence, messages };
     }
 
     messages.push({ role: 'assistant', content: response.assistantContent });
@@ -128,12 +130,12 @@ export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResul
     if (gated) {
       toolsUsed.push(gated.name);
       const interrupt = { pendingCall: { id: gated.id, name: gated.name, input: gated.input }, siblingResults: results, messages };
-      return { text: '', toolsUsed: unique(toolsUsed), sources: dedupeSources(sources), usage, iterations: iteration, hitIterationLimit: false, evidence, interrupt };
+      return { text: '', toolsUsed: unique(toolsUsed), sources: dedupeSources(sources), usage, iterations: iteration, hitIterationLimit: false, evidence, messages, interrupt };
     }
     messages.push({ role: 'user', content: results });
   }
 
-  return { text: '', toolsUsed: unique(toolsUsed), sources: dedupeSources(sources), usage, iterations: params.maxIterations, hitIterationLimit: true, evidence };
+  return { text: '', toolsUsed: unique(toolsUsed), sources: dedupeSources(sources), usage, iterations: params.maxIterations, hitIterationLimit: true, evidence, messages };
 }
 
 const unique = (xs: string[]) => [...new Set(xs)];
