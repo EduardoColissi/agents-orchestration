@@ -6,16 +6,21 @@ const ConfigSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
-  /** anthropic = Claude API (default); ollama = free local models, no API key. */
-  LLM_PROVIDER: z.enum(['anthropic', 'ollama']).default('anthropic'),
+  /** ollama = free local models, no API key (default); anthropic = Claude API. */
+  LLM_PROVIDER: z.enum(['anthropic', 'ollama']).default('ollama'),
   ANTHROPIC_API_KEY: z.string().optional(),
   /** Required only for organisation-level keys (sk-ant-usr…), which must name a workspace. */
   ANTHROPIC_WORKSPACE_ID: z.string().optional(),
   OLLAMA_URL: z.string().default('http://localhost:11434'),
-  OLLAMA_MODEL: z.string().default('qwen2.5:7b'),
+  /** Cheap router + stronger specialists, also on the local provider. */
+  OLLAMA_ROUTER_MODEL: z.string().default('llama3.2:3b'),
+  OLLAMA_AGENT_MODEL: z.string().default('llama3.1:8b'),
+  OLLAMA_NUM_CTX: z.coerce.number().int().min(2048).default(8192),
+  OLLAMA_KEEP_ALIVE: z.string().default('30m'),
   ROUTER_MODEL: z.string().default('claude-haiku-5-5'),
   AGENT_MODEL: z.string().default('claude-sonnet-5-5'),
-  PERSONALITY_ENABLED: z.stringbool().default(true),
+  /** Off by default: an extra LLM call per answer is slow on local models. */
+  PERSONALITY_ENABLED: z.stringbool().default(false),
   PERSONALITY_MODEL: z.string().default('claude-haiku-5-5'),
   WEB_SEARCH_MAX_USES: z.coerce.number().int().min(0).max(5).default(2),
   ROUTER_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),

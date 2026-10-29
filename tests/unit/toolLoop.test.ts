@@ -48,4 +48,14 @@ describe('runToolLoop', () => {
     expect(result.hitIterationLimit).toBe(true);
     expect(llm.calls).toHaveLength(2);
   });
+
+  it('records evidence and sends the last iteration without tools', async () => {
+    const llm = new FakeLLM([{ toolCalls: [{ name: 'echo', input: { v: 1 } }] }, { text: 'done' }]);
+    const echo: AgentTool = { spec: { name: 'echo', description: '', inputSchema: {} }, execute: async () => ({ content: 'card 4111 1111 1111 1111' }) };
+    const out = await runToolLoop({ llm, model: 'm', system: 's', userMessage: 'q', tools: [echo], maxIterations: 2 });
+    expect(out.text).toBe('done');
+    expect(out.evidence).toEqual([{ name: 'echo', input: { v: 1 }, output: expect.not.stringContaining('4111 1111'), isError: false }]);
+    expect(llm.calls[0]!.toolChoice).toBeUndefined();
+    expect(llm.calls[1]!.toolChoice).toBe('none');
+  });
 });

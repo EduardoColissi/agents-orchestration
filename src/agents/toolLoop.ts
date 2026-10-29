@@ -1,5 +1,6 @@
 import type { LLMClient, LLMMessage, ToolResultContent, ToolSpec } from '../llm/client.js';
-import { addUsage, emptyUsage, type Source, type TokenUsage } from '../types.js';
+import { maskPII } from '../guardrails/pii.js';
+import { addUsage, emptyUsage, type Source, type TokenUsage, type ToolEvidence } from '../types.js';
 
 export interface ToolExecutionResult {
   /** Serialized result handed back to the model. */
@@ -9,10 +10,17 @@ export interface ToolExecutionResult {
   isError?: boolean;
 }
 
+export interface ToolExecutionOptions {
+  /** Makes a side effect idempotent (e.g. the handoff id of an approved action). */
+  idempotencyKey?: string;
+}
+
 /** A tool the model can call, with its handler. Handlers receive validated-by-caller input. */
 export interface AgentTool {
   spec: ToolSpec;
-  execute(input: unknown): Promise<ToolExecutionResult>;
+  /** The loop stops before running it; an operator must approve (HITL). */
+  requiresApproval?: boolean;
+  execute(input: unknown, options?: ToolExecutionOptions): Promise<ToolExecutionResult>;
 }
 
 export interface ToolLoopParams {
@@ -33,22 +41,28 @@ export interface ToolLoopResult {
   usage: TokenUsage;
   iterations: number;
   hitIterationLimit: boolean;
+  evidence: ToolEvidence[];
 }
+
+const EVIDENCE_MAX_CHARS = 4000;
 
 /**
  * Generic agentic loop: call the model, execute requested tools, feed results back,
  * stop when the model answers without tool calls or the iteration budget is spent.
+ * The last iteration is sent with `toolChoice: 'none'`, so the agent always ends with an answer.
  */
 export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResult> {
   const byName = new Map(params.tools.map((t) => [t.spec.name, t]));
   const messages: LLMMessage[] = [{ role: 'user', content: params.userMessage }];
   const toolsUsed: string[] = [];
   const sources: Source[] = [];
+  const evidence: ToolEvidence[] = [];
   let usage = emptyUsage();
   // The web search cap is per agent run, not per API call (spec §9 cost control).
   let searchesLeft = params.webSearch?.maxUses ?? 0;
 
   for (let iteration = 1; iteration <= params.maxIterations; iteration++) {
+    const last = iteration === params.maxIterations && params.maxIterations > 1;
     const response = await params.llm.complete({
       model: params.model,
       system: params.system,
@@ -57,6 +71,7 @@ export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResul
       // Once the budget is spent the tool stays declared (max_uses: 1) only if earlier turns
       // contain search blocks, because the API needs the tool to replay them.
       ...(searchesLeft > 0 ? { webSearch: { maxUses: searchesLeft } } : usage.webSearches > 0 ? { webSearch: { maxUses: 1 } } : {}),
+      ...(last ? { toolChoice: 'none' as const } : {}),
       maxTokens: params.maxTokens ?? 1024,
     });
     usage = addUsage(usage, response.usage);
@@ -65,7 +80,7 @@ export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResul
     if (response.usage.webSearches > 0) toolsUsed.push('web_search');
 
     if (response.toolCalls.length === 0) {
-      return { text: response.text, toolsUsed: unique(toolsUsed), sources: dedupeSources(sources), usage, iterations: iteration, hitIterationLimit: false };
+      return { text: response.text, toolsUsed: unique(toolsUsed), sources: dedupeSources(sources), usage, iterations: iteration, hitIterationLimit: false, evidence };
     }
 
     messages.push({ role: 'assistant', content: response.assistantContent });
@@ -73,22 +88,25 @@ export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResul
     for (const call of response.toolCalls) {
       toolsUsed.push(call.name);
       const tool = byName.get(call.name);
+      let result: ToolResultContent;
       if (!tool) {
-        results.push({ type: 'tool_result', tool_use_id: call.id, content: `Unknown tool: ${call.name}`, is_error: true });
-        continue;
+        result = { type: 'tool_result', tool_use_id: call.id, content: `Unknown tool: ${call.name}`, is_error: true };
+      } else {
+        try {
+          const out = await tool.execute(call.input);
+          if (out.sources) sources.push(...out.sources);
+          result = { type: 'tool_result', tool_use_id: call.id, content: out.content, ...(out.isError ? { is_error: true } : {}) };
+        } catch (err) {
+          result = { type: 'tool_result', tool_use_id: call.id, content: `Tool failed: ${(err as Error).message}`, is_error: true };
+        }
       }
-      try {
-        const out = await tool.execute(call.input);
-        if (out.sources) sources.push(...out.sources);
-        results.push({ type: 'tool_result', tool_use_id: call.id, content: out.content, ...(out.isError ? { is_error: true } : {}) });
-      } catch (err) {
-        results.push({ type: 'tool_result', tool_use_id: call.id, content: `Tool failed: ${(err as Error).message}`, is_error: true });
-      }
+      results.push(result);
+      evidence.push({ name: call.name, input: call.input, output: maskPII(result.content).text.slice(0, EVIDENCE_MAX_CHARS), isError: result.is_error === true });
     }
     messages.push({ role: 'user', content: results });
   }
 
-  return { text: '', toolsUsed: unique(toolsUsed), sources: dedupeSources(sources), usage, iterations: params.maxIterations, hitIterationLimit: true };
+  return { text: '', toolsUsed: unique(toolsUsed), sources: dedupeSources(sources), usage, iterations: params.maxIterations, hitIterationLimit: true, evidence };
 }
 
 const unique = (xs: string[]) => [...new Set(xs)];

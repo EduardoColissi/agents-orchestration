@@ -62,6 +62,7 @@ export class KnowledgeAgent implements Agent {
       sources: result.sources,
       toolsUsed: result.toolsUsed,
       usage: result.usage,
+      evidence: result.evidence,
       notFound,
       ...(result.hitIterationLimit || !answer ? { handoff: { reason: 'knowledge_agent_incomplete' } } : {}),
     };

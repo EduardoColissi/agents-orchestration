@@ -45,6 +45,8 @@ export interface LLMRequest {
   webSearch?: { maxUses: number };
   /** Force a specific tool (used for structured output). */
   forceTool?: string;
+  /** 'none' = the model must answer in text (tools stay declared for history replay). */
+  toolChoice?: 'none';
   maxTokens?: number;
   temperature?: number;
 }

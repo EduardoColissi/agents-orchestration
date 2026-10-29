@@ -75,6 +75,7 @@ export class SupportAgent implements Agent {
       sources: [],
       toolsUsed: result.toolsUsed,
       usage: result.usage,
+      evidence: result.evidence,
       ...(ticketId ? { handoff: { reason: 'support_ticket_opened', ticketId } } : {}),
       ...(!ticketId && (result.hitIterationLimit || !result.text) ? { handoff: { reason: 'support_agent_incomplete' } } : {}),
     };

@@ -30,16 +30,39 @@ describe('OllamaClient', () => {
     expect((sent[0]!.body.tools as unknown[])[0]).toMatchObject({ type: 'function', function: { name: 'get_settlements' } });
     expect(res.toolCalls).toEqual([{ id: expect.any(String), name: 'get_settlements', input: { sale_date: '2026-10-22' } }]);
     expect(res.usage).toEqual({ inputTokens: 50, outputTokens: 10, webSearches: 0 });
-    expect(llm.capabilities).toEqual({ serverWebSearch: false, forcedToolChoice: false });
+    expect(llm.capabilities).toEqual({ serverWebSearch: false, forcedToolChoice: true });
   });
 
-  it('emulates forced tool choice by accepting a JSON answer written as text', async () => {
-    const { impl, sent } = fetchStub([{ message: { role: 'assistant', content: 'Here you go:\n```json\n{"route":"support","plan":["support"],"confidence":0.9,"language":"en","reason":"r"}\n```' } }]);
-    const llm = new OllamaClient('http://ollama:11434', 'm', impl);
-    const res = await llm.complete({ model: 'm', system: 'sys', messages: [{ role: 'user', content: 'q' }], tools: [{ name: 'route_decision', description: '', inputSchema: {} }], forceTool: 'route_decision' });
-    expect(String((sent[0]!.body.messages as Array<{ content: string }>)[0]!.content)).toContain('MUST answer by calling the tool "route_decision"');
-    expect(res.toolCalls[0]).toMatchObject({ name: 'route_decision', input: { route: 'support' } });
+  it('forces a tool through `format` (JSON Schema) with constant num_ctx and keep_alive', async () => {
+    const { impl, sent } = fetchStub([{ message: { role: 'assistant', content: '{"route":"support","plan":"[\\"support\\"]","confidence":"0.9","language":"en","reason":"r"}' } }]);
+    const llm = new OllamaClient('http://ollama:11434', 'm', impl, { numCtx: 8192, keepAlive: '30m' });
+    const schema = { type: 'object', properties: { route: { type: 'string' }, plan: { type: 'array' }, confidence: { type: 'number' } } };
+    const res = await llm.complete({ model: 'm', system: 'sys', messages: [{ role: 'user', content: 'q' }], tools: [{ name: 'route_decision', description: '', inputSchema: schema }], forceTool: 'route_decision' });
+    expect(sent[0]!.body).toMatchObject({ format: schema, keep_alive: '30m', options: { num_ctx: 8192, temperature: 0 } });
+    expect(sent[0]!.body.tools).toBeUndefined();
+    expect(res.toolCalls[0]).toMatchObject({ name: 'route_decision', input: { route: 'support', plan: ['support'], confidence: 0.9 } });
     expect(res.text).toBe('');
+  });
+
+  it('coerces stringified arguments and accepts a tool call written as text', async () => {
+    const { impl } = fetchStub([
+      { message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'get_transactions', arguments: { last_days: '7', status: 'all' } } }] } },
+      { message: { role: 'assistant', content: '{"name": "get_transactions", "parameters": {"last_days": "3"}}' } },
+    ]);
+    const llm = new OllamaClient('http://ollama:11434', 'm', impl);
+    const tools = [{ name: 'get_transactions', description: '', inputSchema: { type: 'object', properties: { last_days: { type: 'integer' }, status: { type: 'string' } } } }];
+    const native = await llm.complete({ model: 'm', system: 's', messages: [{ role: 'user', content: 'q' }], tools });
+    expect(native.toolCalls[0]!.input).toEqual({ last_days: 7, status: 'all' });
+    const written = await llm.complete({ model: 'm', system: 's', messages: [{ role: 'user', content: 'q' }], tools });
+    expect(written.toolCalls[0]).toMatchObject({ name: 'get_transactions', input: { last_days: 3 } });
+  });
+
+  it("omits tools when toolChoice is 'none' so the model must answer", async () => {
+    const { impl, sent } = fetchStub([{ message: { role: 'assistant', content: 'final' } }]);
+    const llm = new OllamaClient('http://ollama:11434', 'm', impl);
+    const res = await llm.complete({ model: 'm', system: 's', messages: [{ role: 'user', content: 'q' }], tools: [{ name: 't', description: '', inputSchema: {} }], toolChoice: 'none' });
+    expect(sent[0]!.body.tools).toBeUndefined();
+    expect(res.text).toBe('final');
   });
 
   it('echoes assistant tool calls and tool results in Ollama format across a tool loop', async () => {

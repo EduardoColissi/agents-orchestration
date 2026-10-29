@@ -46,7 +46,7 @@ export class AnthropicClient implements LLMClient {
         system: request.system,
         messages,
         ...(tools.length > 0 ? { tools } : {}),
-        ...(request.forceTool ? { tool_choice: { type: 'tool', name: request.forceTool } } : {}),
+        ...(request.forceTool ? { tool_choice: { type: 'tool', name: request.forceTool } } : request.toolChoice === 'none' && tools.length > 0 ? { tool_choice: { type: 'none' } } : {}),
         ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
       });
 

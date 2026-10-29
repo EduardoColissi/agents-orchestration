@@ -38,6 +38,14 @@ export interface AgentContext {
   nextSteps: AgentName[];
 }
 
+/** One executed tool call, kept as evidence for operators and the evaluation judge. */
+export interface ToolEvidence {
+  name: string;
+  input: unknown;
+  output: string;
+  isError: boolean;
+}
+
 export interface HandoffRequest {
   reason: string;
   ticketId?: string;
@@ -51,6 +59,8 @@ export interface AgentResult {
   usage: TokenUsage;
   /** Set when the agent could not resolve the request and a human should take over. */
   handoff?: HandoffRequest;
+  /** Tool calls executed by this agent, with their (masked) outputs. */
+  evidence?: ToolEvidence[];
   /** Knowledge agent: true when it explicitly said the information was not found. */
   notFound?: boolean;
 }
