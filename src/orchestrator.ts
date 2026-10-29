@@ -180,7 +180,10 @@ export class Orchestrator {
     executed.push('router');
     log.info({ stage: 'router', agent: 'router', latency_ms: routed.ms, ...routeLog(decision), fallback, error, tokens: routed.value.usage }, 'routing decision');
 
-    const language = normalizeLanguage(decision.language) ?? guessedLanguage;
+    // The deterministic detector wins when the text carries evidence (pt/es words, or a sentence
+    // with none of them = English); the Router only decides for very short follow-ups.
+    const routerLanguage = normalizeLanguage(decision.language);
+    const language = guessedLanguage !== 'en' || message.trim().split(/\s+/).length >= 4 || !routerLanguage ? guessedLanguage : routerLanguage;
 
     if (decision.route === 'blocked') {
       return this.finish(turn, log, started, traceId, usage, {

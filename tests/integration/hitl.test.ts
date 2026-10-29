@@ -184,4 +184,19 @@ describe('HITL approval: gated action → checkpoint → operator → resume (FR
     expect((await asOperator(t, 'POST', `/operator/handoffs/${handoffId}/resolve`, { action: 'approve', expected_version: 2 })).statusCode).toBe(409);
     expect(t.repo.listTickets()).toHaveLength(0);
   });
+
+describe('approval guard rails', () => {
+  it('the replacement tool is not offered when the merchant did not ask for a new machine', async () => {
+    const llm = scriptedLLM({ router: [route({ route: 'support', plan: ['support', 'knowledge'] })], support: [{ text: 'Offline.' }], knowledge: [{ text: 'Restart it.' }] });
+    const t = await buildTestApp(llm);
+    await chat(t, 'My card machine will not connect to the internet');
+    expect(llm.calls.find((c) => kindOf(c) === 'support')!.tools!.map((x) => x.name)).not.toContain('request_terminal_replacement');
+  });
+
+  it('answers in the language of the message even if the Router says otherwise', async () => {
+    const t = await buildTestApp(scriptedLLM({ router: [route({ route: 'escalation', plan: [], language: 'pt' })] }));
+    const body = await chat(t, 'I would like to talk to a person please');
+    expect(body.answer).toContain("I've handed your request");
+  });
+});
 });

@@ -20,6 +20,8 @@ export interface AgentTool {
   spec: ToolSpec;
   /** The loop stops before running it; an operator must approve (HITL). */
   requiresApproval?: boolean;
+  /** Returns an error message when the input is invalid, without side effects. */
+  validate?(input: unknown): string | null;
   execute(input: unknown, options?: ToolExecutionOptions): Promise<ToolExecutionResult>;
 }
 
@@ -97,7 +99,12 @@ export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResul
 
     messages.push({ role: 'assistant', content: response.assistantContent });
     const results: ToolResultContent[] = [];
-    const gated = response.toolCalls.find((c) => byName.get(c.name)?.requiresApproval);
+    // Only a VALID gated call interrupts: an invalid one goes back to the model as an error to fix,
+    // so an operator is never asked to approve an action that could not run.
+    const gated = response.toolCalls.find((c) => {
+      const tool = byName.get(c.name);
+      return tool?.requiresApproval && !tool.validate?.(c.input);
+    });
     for (const call of response.toolCalls) {
       if (call === gated) continue;
       toolsUsed.push(call.name);

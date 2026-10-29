@@ -58,4 +58,17 @@ describe('runToolLoop', () => {
     expect(llm.calls[0]!.toolChoice).toBeUndefined();
     expect(llm.calls[1]!.toolChoice).toBe('none');
   });
+
+  it('an invalid approval-gated call does not interrupt: the error goes back to the model', async () => {
+    const llm = new FakeLLM([{ toolCalls: [{ name: 'gated', input: { wrong: 1 } }] }, { toolCalls: [{ name: 'gated', input: { serial: 'GS-1' } }] }]);
+    const gated: AgentTool = {
+      spec: { name: 'gated', description: '', inputSchema: {} },
+      requiresApproval: true,
+      validate: (i) => ((i as { serial?: string }).serial ? null : 'Invalid input for gated: serial required'),
+      execute: async () => ({ content: 'Invalid input for gated: serial required', isError: true }),
+    };
+    const out = await runToolLoop({ llm, model: 'm', system: 's', userMessage: 'q', tools: [gated], maxIterations: 3 });
+    expect(out.interrupt?.pendingCall.input).toEqual({ serial: 'GS-1' });
+    expect(JSON.stringify(llm.calls[1]!.messages.at(-1))).toContain('serial required');
+  });
 });

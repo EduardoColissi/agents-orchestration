@@ -31,6 +31,9 @@ export interface ApprovalCheckpoint {
   siblingResults: ToolResultContent[];
 }
 
+/** The gated replacement tool is only offered when the merchant actually asks for a new machine. */
+const REPLACEMENT_INTENT = /(troc|substitu|nova maquininha|outra maquininha|replac|exchange|new (card )?machine)/i;
+
 const NOT_FOUND_MESSAGES: Record<string, string> = {
   pt: 'Não encontrei uma conta Getnet vinculada a este usuário, então não consigo consultar vendas, recebimentos ou maquininhas. Confira se você está logado com o usuário certo ou, se preferir, posso te encaminhar para um atendente humano.',
   es: 'No encontré una cuenta Getnet vinculada a este usuario, así que no puedo consultar ventas, depósitos ni terminales. Verifica que hayas iniciado sesión con el usuario correcto o, si prefieres, puedo derivarte a un agente humano.',
@@ -80,7 +83,8 @@ export class SupportAgent implements Agent, ApprovalResumer {
     }
 
     let ticketId: string | undefined;
-    const tools = createSupportTools(this.repo, ctx.userId).map((tool): AgentTool =>
+    const wantsReplacement = REPLACEMENT_INTENT.test(`${ctx.message} ${ctx.query}`);
+    const tools = createSupportTools(this.repo, ctx.userId).filter((t) => wantsReplacement || !t.requiresApproval).map((tool): AgentTool =>
       tool.spec.name !== 'create_support_ticket'
         ? tool
         : {

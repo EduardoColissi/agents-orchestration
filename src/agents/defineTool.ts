@@ -16,6 +16,10 @@ export function defineTool<S extends z.ZodObject>(
   return {
     spec: { name, description, inputSchema },
     ...(flags.requiresApproval ? { requiresApproval: true } : {}),
+    validate(raw) {
+      const parsed = schema.safeParse(raw ?? {});
+      return parsed.success ? null : `Invalid input for ${name}: ${z.prettifyError(parsed.error)}`;
+    },
     async execute(raw, options = {}) {
       const parsed = schema.safeParse(raw ?? {});
       if (!parsed.success) {
