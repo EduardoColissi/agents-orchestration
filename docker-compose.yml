@@ -41,7 +41,8 @@ services:
       target: runtime
     image: getnet-multi-agent:2
     ports:
-      - "${PORT:-3000}:3000"
+      # Loopback only by default: the demo credentials are in the README. Use API_BIND=0.0.0.0 to expose it.
+      - "${API_BIND:-127.0.0.1}:${PORT:-3000}:3000"
     env_file:
       - path: .env
         required: false

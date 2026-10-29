@@ -52,4 +52,15 @@ describe('judge', () => {
     expect(String(llm.calls[0]!.messages[0]!.content)).toContain('<reference_facts>\n- f');
     expect(() => parseScores({ groundedness: 9 })).toThrow(/invalid scores/);
   });
+
+describe('gate strictness', () => {
+  it('fails when a baseline check disappears, on any leak regression and on failed requests', () => {
+    const good = summarize([{ ...record('1', 1, true, scores(5)), checks: [{ name: 'route', pass: true }, { name: 'no_cross_merchant_data', pass: true }] }, record('2', 1, true, scores(5))], []);
+    const baseline = toBaseline(good);
+    const broken = summarize([{ ...record('1', 1, false), checks: [{ name: 'request', pass: false }] }], []);
+    expect(gate(broken, baseline)).toEqual(expect.arrayContaining(['route missing (baseline 1)', 'no_cross_merchant_data missing (baseline 1)', 'requests failed (0)']));
+    const leaking = summarize([{ ...record('1', 1, true, scores(5)), checks: [{ name: 'route', pass: true }, { name: 'no_cross_merchant_data', pass: false }] }, record('2', 1, true, scores(5))], []);
+    expect(gate(leaking, baseline)).toEqual(expect.arrayContaining([expect.stringContaining('no_cross_merchant_data 0 < baseline 1 - 0')]));
+  });
+});
 });

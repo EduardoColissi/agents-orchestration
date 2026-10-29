@@ -19,6 +19,7 @@ FROM deps AS eval
 COPY tsconfig.json ./
 COPY src ./src
 COPY eval ./eval
+COPY data ./data
 ENTRYPOINT ["npx", "tsx", "eval/run.ts"]
 
 # ---- runtime (default target) ----

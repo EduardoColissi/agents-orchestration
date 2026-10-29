@@ -82,7 +82,11 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
     return deps.hitl.resolve(request.principal!, request.params.id, { action: parsed.data.action, expectedVersion: parsed.data.expected_version, ...(parsed.data.message ? { message: parsed.data.message } : {}) });
   });
   // Operational metrics from persisted spans: p50/p95/p99 per stage, tokens, error and escalation rates.
-  app.get<{ Querystring: { since?: string } }>('/operator/metrics', operator, async (request) => deps.spans.metrics(request.query.since));
+  app.get<{ Querystring: { since?: unknown } }>('/operator/metrics', operator, async (request, reply) => {
+    const since = z.iso.datetime().optional().safeParse(request.query.since);
+    if (!since.success) return reply.code(400).send({ error: 'invalid_request', details: 'since must be an ISO date-time' });
+    return deps.spans.metrics(since.data);
+  });
   app.get<{ Params: { id: string } }>('/operator/conversations/:id', operator, async (request) => deps.hitl.conversationTrace(request.principal!, request.params.id));
 
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {

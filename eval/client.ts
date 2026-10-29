@@ -26,6 +26,10 @@ export class ApiClient {
   }
 
   async as<T = Record<string, unknown>>(username: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<ApiResult<T>> {
+    const res = await this.call<T>(method, path, await this.token(username), body);
+    if (res.status !== 401) return res;
+    // Long runs (CPU) outlive the token TTL: log in again once.
+    this.tokens.delete(username);
     return this.call<T>(method, path, await this.token(username), body);
   }
 

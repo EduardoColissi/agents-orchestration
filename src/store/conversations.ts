@@ -68,9 +68,10 @@ export class ConversationStore {
     return result.changes > 0;
   }
 
-  messages(conversationId: string, opts: { inContextOnly?: boolean; afterId?: number } = {}): StoredMessage[] {
+  messages(conversationId: string, opts: { inContextOnly?: boolean; afterId?: number; withEvidence?: boolean } = {}): StoredMessage[] {
+    const columns = opts.withEvidence === false ? 'id, conversation_id, role, content, route, trace_id, in_context, handoff_id, NULL AS evidence, created_at' : '*';
     const rows = this.db
-      .prepare('SELECT * FROM messages WHERE conversation_id = ? AND (? = 0 OR in_context = 1) AND id > ? ORDER BY id')
+      .prepare(`SELECT ${columns} FROM messages WHERE conversation_id = ? AND (? = 0 OR in_context = 1) AND id > ? ORDER BY id`)
       .all(conversationId, opts.inContextOnly ? 1 : 0, opts.afterId ?? 0) as unknown as MessageRow[];
     return rows.map(toMessage);
   }

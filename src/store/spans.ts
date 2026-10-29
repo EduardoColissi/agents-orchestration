@@ -37,7 +37,9 @@ export class SpanStore {
     const groups = new Map<string, SpanRow[]>();
     for (const r of rows) {
       const key = `${r.stage}:${r.name}`;
-      groups.set(key, [...(groups.get(key) ?? []), r]);
+      const group = groups.get(key);
+      if (group) group.push(r);
+      else groups.set(key, [r]);
     }
     const stages = [...groups.entries()].map(([key, rs]) => {
       const durations = rs.map((r) => r.duration_ms);

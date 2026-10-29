@@ -38,13 +38,15 @@ export class ChatService {
     try {
       const open = this.deps.handoffs.openFor(conversation.id);
       const openHandoff = open ? { id: open.id, kind: open.kind, status: open.status } : null;
-      const context = buildContextBlock({ summary: conversation.summary, messages: this.deps.conversations.messages(conversation.id, { inContextOnly: true }), openHandoff });
+      // Older messages live in the summary: only the unsummarized tail is read (bounded by compaction).
+      const recent = (c: typeof conversation) => this.deps.conversations.messages(c.id, { inContextOnly: true, afterId: c.summarizedUpto, withEvidence: false });
+      const context = buildContextBlock({ summary: conversation.summary, messages: recent(conversation), openHandoff });
       const turn = await this.deps.orchestrator.handle({ message: input.message, userId: principal.sub, traceId: input.traceId, context, openHandoff });
       transaction(this.deps.db, () => {
         const base = { conversationId: conversation.id, traceId: input.traceId, inContext: turn.inContext };
         this.deps.conversations.addMessage({ ...base, role: 'merchant', content: turn.maskedMessage });
         this.deps.conversations.addMessage({ ...base, role: 'assistant', content: turn.response.answer, route: turn.response.route, evidence: turn.evidence });
-        const compacted = compact(conversation.summary, conversation.summarizedUpto, this.deps.conversations.messages(conversation.id, { inContextOnly: true }));
+        const compacted = compact(conversation.summary, conversation.summarizedUpto, recent(conversation));
         if (compacted) this.deps.conversations.updateSummary(conversation.id, compacted.summary, compacted.summarizedUpto);
         this.deps.spans.record(input.traceId, conversation.id, [
           ...turn.spans,
