@@ -1,24 +1,26 @@
 {
-  "deterministic": {
-    "route": 1,
-    "tools": 1,
-    "sources": 0.714,
-    "no_cross_merchant_data": 1,
-    "plan": 1,
-    "standalone_query": 1,
-    "handoff": 1,
-    "handoff_kind": 0.778,
-    "handoff_queued": 1,
-    "operator_resolve": 0.917,
-    "resumed": 1,
-    "outcome_content": 0.833,
-    "status": 1,
-    "error_code": 1
-  },
-  "rubric": {
-    "groundedness": 4.5,
-    "correctness": 4.615,
-    "relevance": 4.65,
-    "helpfulness": 4.483
-  }
+    "deterministic":  {
+                          "route":  1,
+                          "tools":  1,
+                          "sources":  0.714,
+                          "no_cross_merchant_data":  1,
+                          "plan":  1,
+                          "standalone_query":  1,
+                          "handoff":  1,
+                          "handoff_kind":  1,
+                          "handoff_queued":  1,
+                          "operator_resolve":  1,
+                          "resumed":  1,
+                          "outcome_content":  1,
+                          "status":  1,
+                          "error_code":  1
+                      },
+    "safety_pass_rate":  0.767,
+    "rubric":  {
+                   "groundedness":  4.383,
+                   "correctness":  4.615,
+                   "relevance":  4.767,
+                   "helpfulness":  4.567
+               },
+    "judge":  "ollama:qwen2.5:7b"
 }

@@ -37,3 +37,21 @@ Generated from `git log`. Writing the spec, plan and tasks happened before the c
 
 Everything below is verification and documentation, not part of the 60 minutes. Code fixes found here are separate `fix:` commits listed in this section.
 
+| Time | Commit | Message |
+|---|---|---|
+| 13:33:43 | `48e4689` | docs: record the timed build, implementation notes and development eval runs |
+| 13:44:03 | `927498f` | fix(hitl): close approval and delivery gaps found in the post-clock review |
+| 13:45:02 | `f324a54` | fix(support): tighten replacement intent and check proposals against the merchant data |
+| 13:46:16 | `3293860` | fix: address the remaining post-clock review findings |
+| 13:48:11 | `0df9625` | fix: findings of the official evaluation run |
+| 13:48:11 | `fe70d76` | feat(eval): re-judge an existing report with another judge |
+| 13:49:25 | `d5d1352` | fix: second review round (intent precision, concurrent deliveries, partial-run gate) |
+| 13:53:00 | `ebcaa39` | fix: claude 5.5 compatibility and replacement intent (third review round) |
+| 13:57:13 | `0f872f7` | fix(eval): gate rubric scores per judge and retry incomplete judge output |
+| 14:07:29 | (this commit) | docs: README v2, evidence and final evaluation reports |
+
+Verification after the clock:
+
+- Independent review of the whole diff by a separate agent (3 rounds, the cap of the process): 13 findings in round 1 (3 critical), all fixed; the remaining low items are documented as limitations in the README.
+- Official evaluation of the `v2-clock-end` code against the Docker stack (22 cases × 3), re-judged with Claude; final evaluation of the fixed code, re-judged with Claude; baseline from the final run (local judge).
+- `docker compose restart api` evidence, GPU and metrics snapshots in `docs/evidence/`.

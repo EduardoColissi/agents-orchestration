@@ -1,0 +1,10 @@
+# 2026-10-29T14:03:30-03:00 — docker compose (GPU override) during the evaluation
+api: Up 17 seconds (healthy)
+ollama: Up 27 minutes (healthy)
+
+NAME           ID              SIZE      PROCESSOR    CONTEXT    RUNNER      UNTIL               
+llama3.2:3b    a80c4f17acd5    3.1 GB    100% GPU     8192       llamacpp    29 minutes from now    
+qwen2.5:7b     845dbda0ea48    5.1 GB    100% GPU     8192       llamacpp    8 minutes from now     
+
+name, memory.used [MiB], memory.total [MiB]
+NVIDIA GeForce RTX 3060, 9375 MiB, 12288 MiB
