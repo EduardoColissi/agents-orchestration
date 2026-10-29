@@ -95,7 +95,6 @@ describe('support tools', () => {
   it('detects a request for a new machine, not for other things merchants replace', async () => {
     const { wantsMachineReplacement } = await import('../../src/agents/support.js');
     expect(wantsMachineReplacement('Minha Get Smart GS-1988-0001 está offline faz dias, quero trocar por uma nova')).toBe(true);
-    expect(wantsMachineReplacement('Quero uma nova maquininha')).toBe(true);
     expect(wantsMachineReplacement('I want to replace my card machine')).toBe(true);
     expect(wantsMachineReplacement('Quero trocar a conta de depósito')).toBe(false);
     expect(wantsMachineReplacement('Como troco a bobina da maquininha?')).toBe(false);
@@ -105,5 +104,8 @@ describe('support tools', () => {
     expect(wantsMachineReplacement('Recebi a nova máquina, como ativo?')).toBe(false);
     expect(wantsMachineReplacement('Quero trocar a maquininha porque a bateria não carrega e a tela acabou')).toBe(true);
     expect(wantsMachineReplacement('Não encontro onde trocar a maquininha')).toBe(true);
+    expect(wantsMachineReplacement('Quero saber como configurar minha nova maquininha')).toBe(false);
+    expect(wantsMachineReplacement('I need help setting up my new machine')).toBe(false);
+    expect(wantsMachineReplacement('A maquininha dá troco?')).toBe(false);
   });
 });

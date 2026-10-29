@@ -8,6 +8,9 @@ const MAX_PAUSE_CONTINUATIONS = 3;
 export class AnthropicClient implements LLMClient {
   readonly capabilities = { serverWebSearch: true, forcedToolChoice: true } as const;
   private readonly client: Anthropic;
+  /** Per-model limitations learned from the API (newer models reject a forced tool_choice or temperature). */
+  private readonly noForcedTool = new Set<string>();
+  private readonly noTemperature = new Set<string>();
 
   constructor(apiKey: string, client?: Anthropic, options: { workspaceId?: string } = {}) {
     this.client =
@@ -40,15 +43,7 @@ export class AnthropicClient implements LLMClient {
 
     // Server tools (web search) may return `pause_turn`; we continue the same turn until done.
     for (let i = 0; i <= MAX_PAUSE_CONTINUATIONS; i++) {
-      const response = await this.client.messages.create({
-        model: request.model,
-        max_tokens: request.maxTokens ?? 1024,
-        system: request.system,
-        messages,
-        ...(tools.length > 0 ? { tools } : {}),
-        ...(request.forceTool ? { tool_choice: { type: 'tool', name: request.forceTool } } : request.toolChoice === 'none' && tools.length > 0 ? { tool_choice: { type: 'none' } } : {}),
-        ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-      });
+      const response = await this.create(request, messages, tools);
 
       assistantContent.push(...response.content);
       inputTokens += response.usage.input_tokens;
@@ -77,6 +72,34 @@ export class AnthropicClient implements LLMClient {
       usage: { inputTokens, outputTokens, webSearches },
       assistantContent,
     };
+  }
+
+  /**
+   * One API call. When a model rejects a forced tool_choice or temperature, the limitation is
+   * remembered for that model and the call is retried: the forced tool becomes an instruction
+   * (tool_choice auto) and the temperature is dropped.
+   */
+  private async create(request: LLMRequest, messages: Anthropic.Messages.MessageParam[], tools: Anthropic.Messages.ToolUnion[]): Promise<Anthropic.Messages.Message> {
+    const forced = !!request.forceTool && !this.noForcedTool.has(request.model);
+    const withTemperature = request.temperature !== undefined && !this.noTemperature.has(request.model);
+    const system = request.forceTool && !forced ? `${request.system}\n\nYou MUST answer by calling the tool "${request.forceTool}" exactly once. Never answer with plain text.` : request.system;
+    try {
+      return await this.client.messages.create({
+        model: request.model,
+        max_tokens: request.maxTokens ?? 1024,
+        system,
+        messages,
+        ...(tools.length > 0 ? { tools } : {}),
+        ...(forced ? { tool_choice: { type: 'tool', name: request.forceTool! } } : request.toolChoice === 'none' && tools.length > 0 ? { tool_choice: { type: 'none' } } : {}),
+        ...(withTemperature ? { temperature: request.temperature } : {}),
+      });
+    } catch (err) {
+      const message = (err as Error).message ?? '';
+      if (forced && /tool_choice[\s\S]*not supported/i.test(message)) this.noForcedTool.add(request.model);
+      else if (withTemperature && /temperature[\s\S]*(not permitted|not supported)/i.test(message)) this.noTemperature.add(request.model);
+      else throw err;
+      return this.create(request, messages, tools);
+    }
   }
 }
 

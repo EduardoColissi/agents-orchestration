@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { LLMClient } from '../src/llm/client.js';
+import { extractJsonObject } from '../src/llm/ollama.js';
 
 export const ScoresSchema = z.object({
   groundedness: z.number().int().min(1).max(5),
@@ -63,7 +64,8 @@ export class Judge {
       temperature: 0,
       maxTokens: 400,
     });
-    return parseScores(response.toolCalls.find((c) => c.name === 'record_scores')?.input);
+    // Providers that cannot force the tool may answer with the JSON as text.
+    return parseScores(response.toolCalls.find((c) => c.name === 'record_scores')?.input ?? extractJsonObject(response.text));
   }
 }
 

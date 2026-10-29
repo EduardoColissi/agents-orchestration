@@ -32,15 +32,14 @@ export interface ApprovalCheckpoint {
 }
 
 /**
- * The gated replacement tool is only offered when the merchant asks for a new MACHINE: a replacement
+ * The gated replacement tool is only offered when the merchant asks to replace a MACHINE: a replacement
  * verb plus a machine reference, and none of the other things merchants "trocam" (chip, paper roll,
- * password, bank account, change for cash…).
+ * password, bank account…). "Minha nova maquininha não liga" is a support question, not a request.
  */
-const ASK_NEW_MACHINE = /(?<!\p{L})(quero|preciso|gostaria|want|need|request)(?!\p{L})[^.?!]{0,30}(?<!\p{L})(nova|outra|new|another)(?!\p{L})[^.?!]{0,15}(?<!\p{L})(maquininha|m[aá]quina|machine|terminal)(?!\p{L})/iu;
-const REPLACE_VERB = /(?<!\p{L})(troc(ar|a|o|ando)?|substitu\p{L}*|replac\p{L}*|exchang\p{L}*)(?!\p{L})/iu;
+const REPLACE_VERB = /(?<!\p{L})(trocar|troca|trocando|substitu\p{L}*|replac\p{L}*|exchang\p{L}*)(?!\p{L})/iu;
 const MACHINE = /(?<!\p{L})(maquininha|m[aá]quina|terminal|machine|get (smart|mini|cl[aá]ssica|tap))(?!\p{L})|\b(GS|GC)-\d/iu;
 const OTHER_OBJECT = /(?<!\p{L})(chip|bobina|papel|senha|password|conta|account|carregador|charger|cabo|cable)(?!\p{L})/iu;
-export const wantsMachineReplacement = (text: string) => ASK_NEW_MACHINE.test(text) || (REPLACE_VERB.test(text) && MACHINE.test(text) && !OTHER_OBJECT.test(text));
+export const wantsMachineReplacement = (text: string) => REPLACE_VERB.test(text) && MACHINE.test(text) && !OTHER_OBJECT.test(text);
 
 const NOT_FOUND_MESSAGES: Record<string, string> = {
   pt: 'Não encontrei uma conta Getnet vinculada a este usuário, então não consigo consultar vendas, recebimentos ou maquininhas. Confira se você está logado com o usuário certo ou, se preferir, posso te encaminhar para um atendente humano.',
