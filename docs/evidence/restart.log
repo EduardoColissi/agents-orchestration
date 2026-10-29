@@ -1,13 +1,13 @@
-== 2026-10-29T14:03:11-03:00 before restart
-conversation 9776c115-dc4b-47ec-8032-3ee123c68935, handoff HND-8C5DF0A2
-{"messages":2,"open_handoff":{"id":"HND-8C5DF0A2","kind":"assist","status":"pending"}}
+== 2026-10-29T20:02:23-03:00 before restart
+conversation 87a00bc1-0014-4582-be7c-58eebb12a1aa, handoff HND-9C82FCA1
+{"messages":2,"open_handoff":{"id":"HND-9C82FCA1","kind":"assist","status":"pending"}}
 == docker compose restart api
  Container agents-orchestration-api-1 Restarting 
  Container agents-orchestration-api-1 Started 
-== 2026-10-29T14:03:18-03:00 after restart (same token, issued before the restart)
-{"messages":2,"open_handoff":{"id":"HND-8C5DF0A2","kind":"assist","status":"pending"},"last":"Encaminhei seu pedido para um especialista humano da Getnet (protocolo HND-8C5DF"}
+== 2026-10-29T20:02:29-03:00 after restart (same token, issued before the restart)
+{"messages":2,"open_handoff":{"id":"HND-9C82FCA1","kind":"assist","status":"pending"},"last":"Encaminhei seu pedido para um especialista humano da Getnet (protocolo HND-9C82F"}
 queue after restart:
-[{"id":"HND-8C5DF0A2","status":"pending","version":1}]
+[{"id":"HND-9C82FCA1","status":"pending","version":1}]
 operator replies after the restart:
 {"status":"completed","message":{"role":"operator","content":"Olá! Aqui é a Ana, já estou com o seu pedido."}}
-{"status":"ready","checks":{"database":{"ok":true},"knowledge_base":{"ok":true,"detail":"212 chunks"},"llm":{"ok":true,"detail":"ollama models loaded"}}}
+{"status":"ready","checks":{"database":{"ok":true},"knowledge_base":{"ok":true,"detail":"215 chunks"},"llm":{"ok":true,"detail":"ollama models loaded"}}}
