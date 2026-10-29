@@ -86,12 +86,13 @@ export function createSupportTools(repo: CustomerRepository, userId: string): Ag
         reason: z.string().min(5).max(300).describe('Why it should be replaced, based on the diagnostics'),
       }),
       async ({ serial, reason }, { idempotencyKey }) => {
-        const terminals = await repo.getTerminals(userId);
-        if (!terminals.some((t) => t.serial === serial)) return { content: json({ error: 'terminal_not_found', serial }), isError: true };
+        // Models often wrap the serial ("Get Smart GS-1988-0001"): accept it when it contains one of THIS merchant's serials.
+        const terminal = (await repo.getTerminals(userId)).find((t) => serial === t.serial || serial.toUpperCase().includes(t.serial));
+        if (!terminal) return { content: json({ error: 'terminal_not_found', serial }), isError: true };
         // The approval (handoff) id makes the side effect idempotent: approved twice, created once.
         const id = idempotencyKey ? `TCK-${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 8).toUpperCase()}` : undefined;
-        const ticket = await repo.createTicket({ ...(id ? { id } : {}), userId, category: 'terminal_replacement', summary: `Replace ${serial}: ${reason}` });
-        return { content: json({ ticket_id: ticket.id, status: ticket.status, serial }) };
+        const ticket = await repo.createTicket({ ...(id ? { id } : {}), userId, category: 'terminal_replacement', summary: `Replace ${terminal.serial}: ${reason}` });
+        return { content: json({ ticket_id: ticket.id, status: ticket.status, serial: terminal.serial }) };
       },
       { requiresApproval: true },
     ),

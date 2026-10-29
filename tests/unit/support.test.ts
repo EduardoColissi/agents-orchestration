@@ -79,4 +79,16 @@ describe('support tools', () => {
     expect(JSON.parse(out.content).ticket_id).toMatch(/^TCK-/);
     expect(r.listTickets('cliente1988')).toHaveLength(1);
   });
+
+  it('request_terminal_replacement accepts a wrapped serial of the bound merchant only, and is idempotent by key', async () => {
+    const r = repo();
+    const own = toolMap(r, 'cliente1988').request_terminal_replacement!;
+    const first = JSON.parse((await own.execute({ serial: 'Get Smart GS-1988-0001', reason: 'offline for days' }, { idempotencyKey: 'HND-1' })).content);
+    const again = JSON.parse((await own.execute({ serial: 'GS-1988-0001', reason: 'offline for days' }, { idempotencyKey: 'HND-1' })).content);
+    expect(first).toMatchObject({ serial: 'GS-1988-0001', ticket_id: expect.stringMatching(/^TCK-/) });
+    expect(again.ticket_id).toBe(first.ticket_id);
+    expect(r.listTickets()).toHaveLength(1);
+    const other = await toolMap(r, 'cliente2000').request_terminal_replacement!.execute({ serial: 'GS-1988-0001', reason: 'not mine at all' });
+    expect(other.isError).toBe(true);
+  });
 });
