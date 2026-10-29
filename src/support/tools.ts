@@ -15,6 +15,12 @@ export const DECLINE_CODES: Record<string, { meaning: string; action: string }> 
   '91': { meaning: 'Issuer unavailable', action: 'Wait a few minutes and retry; if it persists, use another payment method.' },
 };
 
+/** Models often wrap the serial ("Get Smart GS-1988-0001"): match a value that contains one of the merchant's serials. */
+export function findTerminal<T extends { serial: string }>(terminals: T[], serial: string): T | undefined {
+  const wanted = serial.toUpperCase();
+  return terminals.find((t) => wanted === t.serial || wanted.includes(t.serial));
+}
+
 /**
  * Support tools bound to ONE customer. The user id comes from the orchestrator (the
  * authenticated request), never from the model, so cross-customer access is impossible (FR6).
@@ -86,12 +92,13 @@ export function createSupportTools(repo: CustomerRepository, userId: string): Ag
         reason: z.string().min(5).max(300).describe('Why it should be replaced, based on the diagnostics'),
       }),
       async ({ serial, reason }, { idempotencyKey }) => {
-        // Models often wrap the serial ("Get Smart GS-1988-0001"): accept it when it contains one of THIS merchant's serials.
-        const terminal = (await repo.getTerminals(userId)).find((t) => serial === t.serial || serial.toUpperCase().includes(t.serial));
+        const terminal = findTerminal(await repo.getTerminals(userId), serial);
         if (!terminal) return { content: json({ error: 'terminal_not_found', serial }), isError: true };
         // The approval (handoff) id makes the side effect idempotent: approved twice, created once.
-        const id = idempotencyKey ? `TCK-${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 8).toUpperCase()}` : undefined;
+        const id = idempotencyKey ? `TCK-${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 12).toUpperCase()}` : undefined;
         const ticket = await repo.createTicket({ ...(id ? { id } : {}), userId, category: 'terminal_replacement', summary: `Replace ${terminal.serial}: ${reason}` });
+        // INSERT OR IGNORE returns the stored row: never report someone else's ticket as ours.
+        if (ticket.userId !== userId || ticket.category !== 'terminal_replacement') return { content: json({ error: 'ticket_id_conflict' }), isError: true };
         return { content: json({ ticket_id: ticket.id, status: ticket.status, serial: terminal.serial }) };
       },
       { requiresApproval: true },

@@ -91,4 +91,15 @@ describe('support tools', () => {
     const other = await toolMap(r, 'cliente2000').request_terminal_replacement!.execute({ serial: 'GS-1988-0001', reason: 'not mine at all' });
     expect(other.isError).toBe(true);
   });
+
+  it('detects a request for a new machine, not for other things merchants replace', async () => {
+    const { wantsMachineReplacement } = await import('../../src/agents/support.js');
+    expect(wantsMachineReplacement('Minha Get Smart GS-1988-0001 está offline faz dias, quero trocar por uma nova')).toBe(true);
+    expect(wantsMachineReplacement('Quero uma nova maquininha')).toBe(true);
+    expect(wantsMachineReplacement('I want to replace my card machine')).toBe(true);
+    expect(wantsMachineReplacement('Quero trocar a conta de depósito')).toBe(false);
+    expect(wantsMachineReplacement('Como troco a bobina da maquininha?')).toBe(false);
+    expect(wantsMachineReplacement('Preciso trocar o chip da maquininha')).toBe(false);
+    expect(wantsMachineReplacement('My card machine will not connect')).toBe(false);
+  });
 });

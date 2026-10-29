@@ -7,7 +7,7 @@ export class TicketStore {
   constructor(private readonly db: Db) {}
 
   create(input: NewTicket, createdAt: string): Ticket {
-    const id = input.id ?? `TCK-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const id = input.id ?? `TCK-${randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()}`;
     this.db
       .prepare("INSERT OR IGNORE INTO tickets (id, user_id, category, summary, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)")
       .run(id, input.userId, input.category, input.summary.slice(0, 500), createdAt);

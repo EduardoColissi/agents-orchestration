@@ -2,7 +2,7 @@ import type { LLMClient, LLMMessage, ToolResultContent } from '../llm/client.js'
 import type { Agent, AgentContext, AgentResult } from '../types.js';
 import { emptyUsage } from '../types.js';
 import type { CustomerRepository } from '../support/repository.js';
-import { createSupportTools } from '../support/tools.js';
+import { createSupportTools, findTerminal } from '../support/tools.js';
 import { addDays, localDate, weekdayName } from '../support/dates.js';
 import type { ApprovalResumer } from '../hitl/service.js';
 import type { AuditLog } from '../store/audit.js';
@@ -31,8 +31,16 @@ export interface ApprovalCheckpoint {
   siblingResults: ToolResultContent[];
 }
 
-/** The gated replacement tool is only offered when the merchant actually asks for a new machine. */
-const REPLACEMENT_INTENT = /(troc|substitu|nova maquininha|outra maquininha|replac|exchange|new (card )?machine)/i;
+/**
+ * The gated replacement tool is only offered when the merchant asks for a new MACHINE: a replacement
+ * verb plus a machine reference, and none of the other things merchants "trocam" (chip, paper roll,
+ * password, bank account, change for cash…).
+ */
+const NEW_MACHINE = /((nova|outra) (maquininha|m[aá]quina)|new (card )?machine)/i;
+const REPLACE_VERB = /(troc|substitu|replac|exchange)/i;
+const MACHINE = /(maquininha|m[aá]quina|terminal|machine|get (smart|mini|cl[aá]ssica|tap)|\b(GS|GC)-\d)/i;
+const OTHER_OBJECT = /(chip|bobina|papel|senha|password|conta|account|bateria|battery|carregador|charger|cabo|cable|troco|change for)/i;
+export const wantsMachineReplacement = (text: string) => NEW_MACHINE.test(text) || (REPLACE_VERB.test(text) && MACHINE.test(text) && !OTHER_OBJECT.test(text));
 
 const NOT_FOUND_MESSAGES: Record<string, string> = {
   pt: 'Não encontrei uma conta Getnet vinculada a este usuário, então não consigo consultar vendas, recebimentos ou maquininhas. Confira se você está logado com o usuário certo ou, se preferir, posso te encaminhar para um atendente humano.',
@@ -44,6 +52,18 @@ const APPROVED_FALLBACK: Record<string, (ticket: string) => string> = {
   pt: (t) => `A troca da sua maquininha foi aprovada por um especialista. Abrimos o chamado ${t} para o envio da nova máquina.`,
   es: (t) => `Un especialista aprobó el cambio de tu terminal. Abrimos el ticket ${t} para el envío de la nueva máquina.`,
   en: (t) => `A specialist approved the replacement of your card machine. We opened ticket ${t} to ship the new one.`,
+};
+
+const NOT_OWNED: Record<string, (serial: string) => string> = {
+  pt: (s) => `Não encontrei a maquininha ${s} na sua conta, então não abri o pedido de troca. Confira o número de série no aplicativo Getnet e me diga de novo.`,
+  es: (s) => `No encontré la terminal ${s} en tu cuenta, así que no abrí la solicitud de cambio. Revisa el número de serie en la app de Getnet y dímelo de nuevo.`,
+  en: (s) => `I couldn't find card machine ${s} in your account, so I didn't open the replacement request. Please check the serial number in the Getnet app and tell me again.`,
+};
+
+const APPROVED_BUT_FAILED: Record<string, (id: string) => string> = {
+  pt: (id) => `A troca foi aprovada, mas não consegui registrar o envio agora. Um especialista vai concluir pelo protocolo ${id}.`,
+  es: (id) => `El cambio fue aprobado, pero no pude registrar el envío ahora. Un especialista lo completará con el protocolo ${id}.`,
+  en: (id) => `The replacement was approved, but I couldn't register the shipment right now. A specialist will complete it with ticket ${id}.`,
 };
 
 const REJECTED_FALLBACK: Record<string, (note: string) => string> = {
@@ -83,7 +103,7 @@ export class SupportAgent implements Agent, ApprovalResumer {
     }
 
     let ticketId: string | undefined;
-    const wantsReplacement = REPLACEMENT_INTENT.test(`${ctx.message} ${ctx.query}`);
+    const wantsReplacement = wantsMachineReplacement(`${ctx.message} ${ctx.query}`);
     const tools = createSupportTools(this.repo, ctx.userId).filter((t) => wantsReplacement || !t.requiresApproval).map((tool): AgentTool =>
       tool.spec.name !== 'create_support_ticket'
         ? tool
@@ -118,6 +138,11 @@ export class SupportAgent implements Agent, ApprovalResumer {
     }
 
     const base = { agent: this.name, sources: [], toolsUsed: result.toolsUsed, usage: result.usage, evidence: result.evidence };
+    // Never queue an approval for a machine this merchant does not have (typo, another merchant's serial).
+    const proposedSerial = String((result.interrupt?.pendingCall.input as { serial?: unknown } | undefined)?.serial ?? '');
+    if (result.interrupt && !findTerminal(await this.repo.getTerminals(ctx.userId), proposedSerial)) {
+      return { ...base, answer: (NOT_OWNED[ctx.language] ?? NOT_OWNED.en!)(proposedSerial) };
+    }
     if (result.interrupt) {
       // FR18: the gated tool did NOT run. The checkpoint goes to the operator queue.
       const checkpoint: ApprovalCheckpoint = {
@@ -175,7 +200,11 @@ export class SupportAgent implements Agent, ApprovalResumer {
       gatedResult = { type: 'tool_result', tool_use_id: checkpoint.pendingCall.id, content: `rejected_by_operator: ${note || 'no reason given'}`, is_error: true };
     }
 
-    const fallback = decision.approved ? (APPROVED_FALLBACK[language] ?? APPROVED_FALLBACK.en!)(ticketId) : (REJECTED_FALLBACK[language] ?? REJECTED_FALLBACK.en!)(note);
+    const fallback = !decision.approved
+      ? (REJECTED_FALLBACK[language] ?? REJECTED_FALLBACK.en!)(note)
+      : ticketId
+        ? (APPROVED_FALLBACK[language] ?? APPROVED_FALLBACK.en!)(ticketId)
+        : (APPROVED_BUT_FAILED[language] ?? APPROVED_BUT_FAILED.en!)(handoff.id);
     // A checkpoint is only valid for the provider and model that produced it.
     if (checkpoint.provider !== (this.options.provider ?? 'unknown') || checkpoint.model !== this.options.model) return fallback;
     try {

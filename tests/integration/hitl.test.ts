@@ -258,4 +258,18 @@ describe('HITL robustness (post-clock review)', () => {
     expect((await t.app.inject({ method: 'GET', url: `/operator/conversations/${conversationId}`, headers: merchant })).statusCode).toBe(403);
   });
 });
+
+describe('approval proposals are checked against the merchant data', () => {
+  it("a proposal for a serial the merchant does not have is not queued", async () => {
+    const llm = scriptedLLM({
+      router: [route({ route: 'support', language: 'pt' })],
+      support: [{ toolCalls: [{ name: 'request_terminal_replacement', input: { serial: 'GC-2000-0001', reason: 'offline for days' } }] }],
+    });
+    const t = await buildTestApp(llm);
+    const body = await chat(t, 'Quero trocar minha maquininha GC-2000-0001 por uma nova');
+    expect(body.handoff.required).toBe(false);
+    expect(body.answer).toContain('Não encontrei a maquininha GC-2000-0001');
+    expect(t.deps.handoffs.list()).toHaveLength(0);
+  });
+});
 });
