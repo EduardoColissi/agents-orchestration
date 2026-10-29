@@ -21,6 +21,22 @@ describe('replanning: observe the specialist result, then decide (feedback gap 5
     expect(String(llm.calls.find((c) => kindOf(c) === 'knowledge')!.messages[0]!.content)).toContain('<account_findings agent="support">');
   });
 
+  it('gives Knowledge the offline-machine guide searched in code, whatever query the model would pick', async () => {
+    const llm = scriptedLLM({
+      router: [route({ route: 'support', plan: ['support'] })],
+      support: [{ toolCalls: [{ name: 'get_terminal_status', input: {} }] }, { text: 'Your Get Smart GS-1988-0001 is offline.' }],
+      knowledge: [{ text: 'It is offline: restart it, check the Wi-Fi router and switch to the 4G chip.' }],
+    });
+    const { app } = await buildTestApp(llm);
+    const body = await chat(app, 'Is my card machine online right now?');
+    const prompt = String(llm.calls.find((c) => kindOf(c) === 'knowledge')!.messages[0]!.content);
+    expect(prompt).toContain('<knowledge_base_excerpts');
+    expect(prompt).toContain('Reinicie a maquininha');
+    expect(body.tools_used).toContain('search_knowledge_base');
+    expect(body.sources.map((s: { url: string }) => s.url)).toContain('internal://knowledge/support-playbook.md');
+    expect(body.handoff.required).toBe(false);
+  });
+
   it('a "not found" from Knowledge does not erase what Support found: no gap handoff, no unrelated sources', async () => {
     const llm = scriptedLLM({
       router: [route({ route: 'support', plan: ['support', 'knowledge'], language: 'pt' })],

@@ -100,7 +100,7 @@ npm run ingest             # optional: rebuild data/index.json from the web
 ### Tests and evaluation
 
 ```bash
-npm test                   # 159 tests, offline, scripted fake LLM, SQLite in memory (Node >= 24)
+npm test                   # 160 tests, offline, scripted fake LLM, SQLite in memory (Node >= 24)
 npm run typecheck
 npm run eval -- --runs 3   # semantic evaluation of the running API (EVAL_BASE_URL, default localhost:3000)
 npm run eval -- --runs 1 --only 3,5,MT1,R1,H2   # a few cases (partial runs skip the baseline gate)
@@ -177,7 +177,7 @@ flowchart TD
 - **Router**: no tool loop, one call constrained to the `route_decision` schema (Ollama `format` = JSON Schema; a forced tool on Claude). The output is validated with zod; anything invalid becomes an escalation.
 - **Specialists**: a bounded tool loop (`AGENT_MAX_ITERATIONS`, default 5). The model calls tools, reads the results and answers; the last iteration offers no tools, so it has to answer. Tool inputs are zod schemas (also sent as JSON Schema to the model); invalid input comes back to the model as an error to correct, and the Ollama adapter coerces arguments that small models send as strings.
 - **Support tools** are built per request with the authenticated merchant bound by closure — `get_customer_profile`, `get_settlements`, `get_transactions`, `get_terminal_status`, `create_support_ticket` and the approval-gated `request_terminal_replacement` — so the model cannot choose whose data it reads. Their outputs do the work small models get wrong: decline codes come with meaning and action, and each settlement comes with its weekday and "today/tomorrow/yesterday" computed in code.
-- **Knowledge tools**: `search_knowledge_base` (RAG as a tool: the agent may search again with other words, up to 3 times) and `web_search` (server-side on Claude; a DuckDuckGo tool on Ollama).
+- **Knowledge tools**: `search_knowledge_base` (RAG as a tool: the agent may search again with other words, up to 3 times) and `web_search` (server-side on Claude; a DuckDuckGo tool on Ollama). When Support's diagnostics show an offline machine, the troubleshooting guide is also searched in code and handed to the agent as excerpts (traced as a RAG span like any other search).
 - **Gated tool**: the loop stops before running `request_terminal_replacement` and returns a checkpoint (see Human-in-the-loop).
 - **Evidence**: every tool call is recorded with its input, masked output, duration and error flag — the operator reads it, the judge scores against it, and it becomes a span.
 
@@ -286,7 +286,7 @@ PII (cards with Luhn, CPF, CNPJ, e-mail) masked before logs, LLM and storage · 
 - **Resume from a checkpoint** instead of re-running the agent: the provider never changes mid-conversation, so the exact run can continue, without repeating earlier tool calls (5–15 s saved per resume on the 8B).
 - **The conversation is not paused** while a handoff is open: the interrupt belongs to the request; one open handoff per conversation.
 - **Deterministic where possible**: escalation, compaction, replanning, approval gating, language detection, templates. LLMs route, write and judge.
-- **A "not found" does not erase what was found**: when Support answered from the account and Knowledge then found no official guidance, Support's answer is the final one and nobody is queued. Testing the feedback's own example ("Minha maquininha está offline.") showed the opposite: "I couldn't find…" plus a needless handoff — the Portuguese search missed the English-only playbook, which is now bilingual.
+- **A "not found" does not erase what was found**: when Support answered from the account and Knowledge then found no official guidance, Support's answer is the final one and nobody is queued. Testing the feedback's own example ("Minha maquininha está offline.") showed the opposite: "I couldn't find…" plus a needless handoff. Causes and fixes: the Portuguese search missed the English-only playbook (now bilingual), and the 8B searched for the wrong thing ("máquina de cartão online"), so an offline machine now brings its guide searched in code — the same structured signal the replanner uses.
 - **Local models need structure**: constrained decoding (`format`) for every structured output, argument coercion, and a constrained call to propose the replacement when the 8B does not.
 
 ## Limitations and next steps

@@ -34,7 +34,7 @@ export const KB_DOCS = [
   {
     url: 'internal://knowledge/support-playbook.md',
     title: 'Internal support playbook (synthetic)',
-    text: '## Card machine does not connect to the internet\nRestart the card machine, check the Wi-Fi router, switch to the 4G chip and move the machine closer to an open area before opening a ticket.',
+    text: '## Card machine does not connect to the internet\nRestart the card machine, check the Wi-Fi router, switch to the 4G chip and move the machine closer to an open area before opening a ticket.\n## Maquininha offline ou sem internet: como reiniciar e reconectar a máquina de cartão\nReinicie a maquininha, confira o roteador Wi-Fi e troque para o chip 4G antes de abrir um chamado de suporte.',
   },
 ];
 

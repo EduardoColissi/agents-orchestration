@@ -9,6 +9,11 @@ export interface Replan {
   action: 'add_knowledge' | 'escalate' | 'finish';
 }
 
+/** Support's diagnostics show an offline card machine (structured tool output, not the model's words). */
+export function reportsOfflineTerminal(result: AgentResult): boolean {
+  return result.agent === 'support' && (result.evidence ?? []).some((e) => e.name === 'get_terminal_status' && /"status":\s*"offline"/.test(e.output));
+}
+
 /** Hard cap on specialists per request, whatever the replanner decides. */
 export const MAX_PLAN_STEPS = 3;
 
@@ -24,8 +29,7 @@ export function decideNext(plan: PlanStep[], last: AgentResult): Replan | null {
   const evidence = last.evidence ?? [];
   if (last.agent === 'support') {
     if (evidence.some((e) => e.isError && e.output.startsWith('Tool failed'))) return { after: 'support', signal: 'tool_error', action: 'escalate' };
-    const offline = evidence.some((e) => e.name === 'get_terminal_status' && /"status":\s*"offline"/.test(e.output));
-    if (offline && !plan.includes('knowledge') && plan.length < MAX_PLAN_STEPS) return { after: 'support', signal: 'terminal_offline', action: 'add_knowledge' };
+    if (reportsOfflineTerminal(last) && !plan.includes('knowledge') && plan.length < MAX_PLAN_STEPS) return { after: 'support', signal: 'terminal_offline', action: 'add_knowledge' };
   }
   if (last.agent === 'knowledge' && evidence.some((e) => e.name === 'web_search' && e.isError && /unavailable|failed/i.test(e.output))) {
     return { after: 'knowledge', signal: 'live_data_unavailable', action: 'finish' };

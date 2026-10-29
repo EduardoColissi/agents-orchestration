@@ -14,7 +14,8 @@ describe('persistent traces and metrics (feedback gap 7)', () => {
     await t.app.inject({ method: 'POST', url: '/chat', headers: merchant, payload: { message: 'I want a human' } });
 
     const spans = t.deps.spans.forTrace(first.trace_id);
-    expect(spans.map((s) => `${s.stage}:${s.name}`)).toEqual(['router:router', 'agent:support', 'tool:get_terminal_status', 'agent:knowledge', 'rag:search_knowledge_base', 'turn:chat']);
+    // Two RAG spans: the offline-machine guide searched in code, then the agent's own search.
+    expect(spans.map((s) => `${s.stage}:${s.name}`)).toEqual(['router:router', 'agent:support', 'tool:get_terminal_status', 'agent:knowledge', 'rag:search_knowledge_base', 'rag:search_knowledge_base', 'turn:chat']);
     expect(spans[0]).toMatchObject({ inputTokens: 10, outputTokens: 5, status: 'ok' });
 
     const metrics = await t.app.inject({ method: 'GET', url: '/operator/metrics', headers: { authorization: await tokenFor('op.ana', 'operator') } });
