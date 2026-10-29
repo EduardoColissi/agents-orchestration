@@ -42,7 +42,15 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/health', async () => ({ status: 'ok', knowledge_base_chunks: deps.knowledgeBaseSize, provider: deps.config.LLM_PROVIDER, models }));
 
   // Demo identity provider (spec §3): in production this is the company's OIDC provider.
-  app.post('/auth/token', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request, reply) => {
+  // Limited per client IP + username (after the body is parsed): a UI server logging many users in
+  // through one IP does not share a single bucket, and guessing one account is still capped.
+  const loginLimit = {
+    max: 5,
+    timeWindow: '1 minute',
+    hook: 'preHandler' as const,
+    keyGenerator: (request: { ip: string; body?: unknown }) => `${request.ip}|${String((request.body as { username?: unknown } | undefined)?.username ?? '')}`,
+  };
+  app.post('/auth/token', { config: { rateLimit: loginLimit } }, async (request, reply) => {
     const parsed = TokenRequestSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', details: z.flattenError(parsed.error).fieldErrors });
     const principal = deps.credentials.verify(parsed.data.username, parsed.data.password);

@@ -32,6 +32,9 @@ describe('authentication (FR6, FR10)', () => {
     for (let i = 0; i < 6; i++) statuses.push((await attempt()).statusCode);
     expect(statuses).toEqual([401, 401, 401, 401, 401, 429]);
     expect(deps.audit.list({ action: 'auth.login_failed' })).toHaveLength(5);
+    // The bucket is per IP + username: another user behind the same IP (e.g. the UI server) still signs in.
+    const other = await app.inject({ method: 'POST', url: '/auth/token', payload: { username: 'op.ana', password: 'demo-op.ana' } });
+    expect(other.statusCode).toBe(200);
   });
 
   it.each([
