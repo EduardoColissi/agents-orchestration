@@ -65,9 +65,11 @@ export interface Ticket {
   status: 'open';
 }
 
-export type TicketCategory = 'connectivity' | 'transaction_decline' | 'settlement' | 'human_handoff' | 'other';
+export type TicketCategory = 'connectivity' | 'transaction_decline' | 'settlement' | 'human_handoff' | 'terminal_replacement' | 'other';
 
 export interface NewTicket {
+  /** Explicit id = idempotent creation (the same id is created once). */
+  id?: string;
   userId: string;
   category: TicketCategory;
   summary: string;

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { openDb } from '../store/db.js';
+import { TicketStore } from '../store/tickets.js';
 import { z } from 'zod';
 import { addBusinessDays, addDays, localDate } from './dates.js';
 import type {
@@ -58,19 +59,22 @@ type RawCustomer = z.infer<typeof RawCustomer>;
 
 /**
  * JSON-backed repository. Relative dates (days_ago) are materialized against an injectable
- * clock, so "yesterday's sales" always exist (spec A3). Tickets are kept in memory.
+ * clock, so "yesterday's sales" always exist (spec A3). Tickets are persisted in SQLite.
  */
 export class MockCustomerRepository implements CustomerRepository {
   private readonly customers: Map<string, RawCustomer>;
-  private readonly tickets: Ticket[] = [];
 
-  constructor(data: unknown, private readonly now: () => Date = () => new Date()) {
+  constructor(
+    data: unknown,
+    private readonly now: () => Date = () => new Date(),
+    private readonly tickets: TicketStore = new TicketStore(openDb(':memory:')),
+  ) {
     const parsed = RawFile.parse(data);
     this.customers = new Map(parsed.customers.map((c) => [c.user_id, c]));
   }
 
-  static fromFile(path: string, now?: () => Date): MockCustomerRepository {
-    return new MockCustomerRepository(JSON.parse(readFileSync(path, 'utf8')), now);
+  static fromFile(path: string, now?: () => Date, tickets?: TicketStore): MockCustomerRepository {
+    return new MockCustomerRepository(JSON.parse(readFileSync(path, 'utf8')), now, tickets);
   }
 
   private today(): string {
@@ -169,21 +173,12 @@ export class MockCustomerRepository implements CustomerRepository {
   }
 
   async createTicket(input: NewTicket): Promise<Ticket> {
-    const ticket: Ticket = {
-      id: `TCK-${randomUUID().slice(0, 8).toUpperCase()}`,
-      userId: input.userId,
-      category: input.category,
-      summary: input.summary.slice(0, 500),
-      createdAt: this.now().toISOString(),
-      status: 'open',
-    };
-    this.tickets.push(ticket);
-    return ticket;
+    return this.tickets.create(input, this.now().toISOString());
   }
 
   /** Test/inspection helper. */
   listTickets(userId?: string): Ticket[] {
-    return this.tickets.filter((t) => (userId ? t.userId === userId : true));
+    return this.tickets.list(userId);
   }
 }
 
