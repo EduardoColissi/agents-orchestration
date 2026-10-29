@@ -5,7 +5,7 @@
  */
 const word = (words: string) => new RegExp(`(?<!\\p{L})(?:${words})(?!\\p{L})`, 'giu');
 
-const PT = word('não|nao|você|voce|minha|meu|minhas|meus|quero|quando|como|vendas|maquininha|obrigad[oa]|olá|ola|está|preciso|dinheiro|cartão|dúvida|recebo|caem?|ontem|hoje|eu|uma|isso|já|reais|faço|troca|trocar|nova|também|\\p{L}+ção|\\p{L}+ções');
+const PT = word('não|nao|você|voce|minha|meu|minhas|meus|quero|quando|como|vendas|maquininha|obrigad[oa]|olá|ola|está|preciso|dinheiro|cartão|dúvida|recebo|caem?|ontem|hoje|eu|uma|isso|já|reais|faço|troca|trocar|nova|também|qual|quais|que|da|das|dos|para|entre|diferença|tem|são|\\p{L}+ção|\\p{L}+ções');
 const ES = word('quiero|cuándo|ventas|dinero|necesito|hola|gracias|usted|cómo|dónde|tarjeta|ayer|hoy|mis');
 
 export function detectLanguage(text: string): string {

@@ -5,6 +5,7 @@ import type { Conversation, ConversationStore } from '../store/conversations.js'
 import { transaction, type Db } from '../store/db.js';
 import { buildContextBlock } from '../memory/context.js';
 import { compact } from '../memory/compaction.js';
+import { detectLanguage } from '../guardrails/language.js';
 import { HandoffAlreadyOpenError, type HandoffStore } from '../store/handoffs.js';
 import type { SpanStore } from '../store/spans.js';
 
@@ -40,8 +41,11 @@ export class ChatService {
       const openHandoff = open ? { id: open.id, kind: open.kind, status: open.status } : null;
       // Older messages live in the summary: only the unsummarized tail is read (bounded by compaction).
       const recent = (c: typeof conversation) => this.deps.conversations.messages(c.id, { inContextOnly: true, afterId: c.summarizedUpto, withEvidence: false });
-      const context = buildContextBlock({ summary: conversation.summary, messages: recent(conversation), openHandoff });
-      const turn = await this.deps.orchestrator.handle({ message: input.message, userId: principal.sub, traceId: input.traceId, context, openHandoff });
+      const history = recent(conversation);
+      const context = buildContextBlock({ summary: conversation.summary, messages: history, openHandoff });
+      const lastMerchant = history.filter((m) => m.role === 'merchant').at(-1);
+      const conversationLanguage = lastMerchant ? detectLanguage(lastMerchant.content) : null;
+      const turn = await this.deps.orchestrator.handle({ message: input.message, userId: principal.sub, traceId: input.traceId, context, openHandoff, conversationLanguage });
       transaction(this.deps.db, () => {
         const base = { conversationId: conversation.id, traceId: input.traceId, inContext: turn.inContext };
         this.deps.conversations.addMessage({ ...base, role: 'merchant', content: turn.maskedMessage });

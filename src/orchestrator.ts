@@ -19,6 +19,8 @@ export interface ChatRequest {
   userId: string;
   /** Conversation context block (memory), '' or absent for a new conversation. */
   context?: string;
+  /** Language of the merchant's previous messages, for very short follow-ups. */
+  conversationLanguage?: string | null;
   /** The conversation's open handoff: no second one is opened while it is pending. */
   openHandoff?: { id: string; kind: HandoffKind; status: string } | null;
   /** Propagated from the HTTP layer so logs and errors share the same id. */
@@ -168,7 +170,10 @@ export class Orchestrator {
     turn.decision = fallback ? null : decision;
     turn.spans.push({ stage: 'router', name: 'router', durationMs: routed.ms, inputTokens: routed.value.usage.inputTokens, outputTokens: routed.value.usage.outputTokens, status: fallback ? 'error' : 'ok', attrs: { route: decision.route, confidence: decision.confidence } });
     // Follow-ups are rewritten by the Router; the rewrite goes through the input guardrail too.
-    const query = decision.standalone_query?.trim() || message;
+    // A rewrite only makes sense for a follow-up: without history, or when the model translated the
+    // message into another language, the message itself is the query (small routers copy examples).
+    const rewrite = decision.standalone_query?.trim() ?? '';
+    const query = request.context && rewrite && detectLanguage(rewrite) === detectLanguage(message) ? rewrite : message;
     turn.standaloneQuery = query === message ? null : query;
     if (query !== message && !checkInput(query, request.userId).allowed) {
       log.warn({ stage: 'guardrail_input', standalone_query: query }, 'rewritten query blocked');
@@ -183,7 +188,9 @@ export class Orchestrator {
     // The deterministic detector wins when the text carries evidence (pt/es words, or a sentence
     // with none of them = English); the Router only decides for very short follow-ups.
     const routerLanguage = normalizeLanguage(decision.language);
-    const language = guessedLanguage !== 'en' || message.trim().split(/\s+/).length >= 4 || !routerLanguage ? guessedLanguage : routerLanguage;
+    // Very short follow-ups ("ok", "e agora?") carry little evidence: keep the conversation's language.
+    const shortMessage = guessedLanguage === 'en' && message.trim().split(/\s+/).length < 4;
+    const language = !shortMessage ? guessedLanguage : (request.conversationLanguage ?? routerLanguage ?? guessedLanguage);
 
     if (decision.route === 'blocked') {
       return this.finish(turn, log, started, traceId, usage, {
