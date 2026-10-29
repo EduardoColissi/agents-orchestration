@@ -91,11 +91,12 @@ describe('HITL assist: interrupt → queue → operator → resume (FR17, FR19�
   });
 
   it('operators read the evidence of a conversation; the read is audited', async () => {
-    const llm = scriptedLLM({ router: [route({ route: 'support' })], support: [{ toolCalls: [{ name: 'get_terminal_status', input: {} }] }, { text: 'Your machine is offline.' }] });
+    const llm = scriptedLLM({ router: [route({ route: 'support' })], support: [{ toolCalls: [{ name: 'get_terminal_status', input: {} }] }, { text: 'Your machine is offline.' }], knowledge: [{ text: 'Restart it.' }] });
     const t = await buildTestApp(llm);
     const body = await chat(t, 'Is my machine ok?');
     const trace = (await asOperator(t, 'GET', `/operator/conversations/${body.conversation_id}`)).json();
-    expect(trace.messages[1].evidence).toMatchObject({ route_decision: { route: 'support' }, steps: [{ agent: 'support', tools: [{ name: 'get_terminal_status' }] }] });
+    expect(trace.messages[1].evidence).toMatchObject({ route_decision: { route: 'support' } });
+    expect(trace.messages[1].evidence.steps[0]).toMatchObject({ agent: 'support', tools: [{ name: 'get_terminal_status' }] });
     expect(trace.messages[1].evidence.steps[0].tools[0].output).toContain('GS-1988-0001');
     expect(t.deps.audit.list({ action: 'conversation.trace_read' })).toHaveLength(1);
   });

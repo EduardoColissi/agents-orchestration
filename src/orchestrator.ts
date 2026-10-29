@@ -11,6 +11,7 @@ import { maskPII } from './guardrails/pii.js';
 import { addUsage, emptyUsage, type Agent, type AgentName, type AgentResult, type Route, type Source, type TokenUsage, type ToolEvidence } from './types.js';
 import { dedupeSources } from './agents/toolLoop.js';
 import { newHandoffId, type HandoffKind } from './store/handoffs.js';
+import { decideNext, MAX_PLAN_STEPS, type PlanStep, type Replan } from './orchestration/replanner.js';
 
 export interface ChatRequest {
   message: string;
@@ -32,6 +33,8 @@ export interface ChatResponse {
   sources: Source[];
   tools_used: string[];
   handoff: { required: boolean; reason: string | null; ticket_id: string | null; handoff_id?: string | null; kind?: HandoffKind | null; status?: string | null };
+  /** Steps added after observing a specialist's result (replanning). */
+  replans?: Replan[];
   latency_ms: number;
 }
 
@@ -41,6 +44,7 @@ export interface TurnEvidence {
   standalone_query: string | null;
   steps: Array<{ agent: AgentName; tools: ToolEvidence[] }>;
   sources: Source[];
+  replans: Replan[];
 }
 
 export interface OrchestratorTurn {
@@ -70,6 +74,7 @@ interface TurnState {
   results: AgentResult[];
   openHandoff: ChatRequest['openHandoff'];
   handoffRequest: HandoffRequestSpec | null;
+  replans: Replan[];
 }
 
 export interface OrchestratorDeps {
@@ -106,9 +111,10 @@ export class Orchestrator {
   }
 
   async handle(request: ChatRequest): Promise<OrchestratorTurn> {
-    const turn: TurnState = { message: request.message, decision: null, standaloneQuery: null, results: [], openHandoff: request.openHandoff ?? null, handoffRequest: null };
+    const turn: TurnState = { message: request.message, decision: null, standaloneQuery: null, results: [], openHandoff: request.openHandoff ?? null, handoffRequest: null, replans: [] };
     const response = await this.run(request, turn);
     response.handoff = { handoff_id: null, kind: null, status: null, ...response.handoff };
+    if (turn.replans.length) response.replans = turn.replans;
     return {
       response,
       handoffRequest: turn.handoffRequest,
@@ -119,6 +125,7 @@ export class Orchestrator {
         standalone_query: turn.standaloneQuery,
         steps: turn.results.map((r) => ({ agent: r.agent, tools: r.evidence ?? [] })),
         sources: response.sources,
+        replans: turn.replans,
       },
     };
   }
@@ -191,13 +198,15 @@ export class Orchestrator {
       return this.escalate(turn, log, started, traceId, usage, executed, { userId: request.userId, language, reason: escalationReason, message, results: [] });
     }
 
-    // 3. Execute the plan, passing earlier results forward (FR2).
+    // 3. Execute the plan, passing earlier results forward (FR2); the replanner may add a step.
     const results: AgentResult[] = [];
-    for (const [index, step] of decision.plan.entries()) {
+    const plan: PlanStep[] = [...decision.plan];
+    for (let index = 0; index < plan.length && index < MAX_PLAN_STEPS; index++) {
+      const step = plan[index]!;
       const agent = this.deps.agents[step];
       try {
         const run = await timed(() =>
-          agent.run({ traceId, userId: request.userId, message, history: request.context ?? '', query, language, previous: [...results], nextSteps: decision.plan.slice(index + 1) }),
+          agent.run({ traceId, userId: request.userId, message, history: request.context ?? '', query, language, previous: [...results], nextSteps: plan.slice(index + 1) }),
         );
         results.push(run.value);
         executed.push(step);
@@ -210,6 +219,12 @@ export class Orchestrator {
         if (run.value.approval) return this.requestApproval(turn, log, started, traceId, usage, executed, results, language, run.value.approval);
         // An agent that cannot continue (e.g. unknown customer) stops the plan.
         if (run.value.handoff && run.value.handoff.reason !== 'support_ticket_opened') break;
+        const replan = decideNext(plan, run.value);
+        if (replan) {
+          plan.push('knowledge');
+          turn.replans.push(replan);
+          log.info({ stage: 'replan', ...replan }, 'plan extended after observing the result');
+        }
       } catch (err) {
         log.error({ stage: 'agent', agent: step, err }, 'agent failed');
         return this.escalate(turn, log, started, traceId, usage, executed, { userId: request.userId, language, reason: 'agent_error', message, results });

@@ -12,7 +12,12 @@ describe('memory reaches the Router and the agents (FR13, FR14)', () => {
     const llm = scriptedLLM({
       router: [route({ route: 'support' }), route({ route: 'knowledge', language: 'pt', standalone_query: 'Como reiniciar a maquininha Get Smart GS-1988-0001?' })],
       support: [{ toolCalls: [{ name: 'get_terminal_status', input: {} }] }, { text: 'Sua Get Smart GS-1988-0001 está offline.' }],
-      knowledge: [{ toolCalls: [{ name: 'search_knowledge_base', input: { query: 'reiniciar maquininha Get Smart' } }] }, { text: 'Reinicie a máquina segurando o botão por 10 segundos.' }],
+      knowledge: [
+        // Turn 1: the replanner adds Knowledge after Support finds the machine offline.
+        { text: 'Sua Get Smart GS-1988-0001 está offline; ative o chip 4G.' },
+        { toolCalls: [{ name: 'search_knowledge_base', input: { query: 'reiniciar maquininha Get Smart' } }] },
+        { text: 'Reinicie a máquina segurando o botão por 10 segundos.' },
+      ],
     });
     const { app } = await buildTestApp(llm);
     const t1 = await chat(app, 'Minha maquininha não conecta na internet');
@@ -22,10 +27,10 @@ describe('memory reaches the Router and the agents (FR13, FR14)', () => {
     const routerInput = String(routerTurn2.messages[0]!.content);
     expect(routerInput).toContain('<conversation_context>');
     expect(routerInput).toContain('merchant: Minha maquininha não conecta na internet');
-    expect(routerInput).toContain('assistant: Sua Get Smart GS-1988-0001 está offline.');
+    expect(routerInput).toContain('assistant: Sua Get Smart GS-1988-0001 está offline');
 
-    const knowledgeInput = String(llm.calls.find((c) => kindOf(c) === 'knowledge')!.messages[0]!.content);
-    expect(knowledgeInput).toContain('Sua Get Smart GS-1988-0001 está offline.');
+    const knowledgeInput = String(llm.calls.filter((c) => kindOf(c) === 'knowledge')[1]!.messages[0]!.content);
+    expect(knowledgeInput).toContain('Sua Get Smart GS-1988-0001 está offline');
     expect(knowledgeInput).toContain('<standalone_question>\nComo reiniciar a maquininha Get Smart GS-1988-0001?');
   });
 
