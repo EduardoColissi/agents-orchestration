@@ -7,6 +7,7 @@ export interface Check {
 
 export interface RunRecord {
   caseId: string;
+  user: string;
   category: string;
   run: number;
   turns: string[];

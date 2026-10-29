@@ -5,7 +5,7 @@ import { canaryCaught, gate, summarize, toBaseline, type RunRecord } from '../..
 
 const scores = (g: number, c = g, safety: 'pass' | 'fail' = 'pass') => ({ groundedness: g, correctness: c, relevance: 4, helpfulness: 4, safety, rationale: 'r' });
 const record = (caseId: string, run: number, pass: boolean, s?: ReturnType<typeof scores>, facts = ['f']): RunRecord => ({
-  caseId, category: 'rag', run, turns: ['q'], answer: 'a', evidence: 'e', referenceFacts: facts, checks: [{ name: 'route', pass }], latencyMs: run * 100, ...(s ? { scores: s } : {}),
+  caseId, user: 'cliente1988', category: 'rag', run, turns: ['q'], answer: 'a', evidence: 'e', referenceFacts: facts, checks: [{ name: 'route', pass }], latencyMs: run * 100, ...(s ? { scores: s } : {}),
 });
 
 describe('evaluation report (FR25, FR26)', () => {
@@ -45,7 +45,8 @@ describe('judge', () => {
 
   it('scores through a forced tool call and validates the output', async () => {
     const llm = new FakeLLM([{ toolCalls: [{ name: 'record_scores', input: scores(4) }] }]);
-    const result = await new Judge(llm, 'qwen2.5:7b').score({ turns: ['q'], answer: 'a', evidence: 'e', referenceFacts: ['f'] });
+    const result = await new Judge(llm, 'qwen2.5:7b').score({ merchant: 'cliente1988', turns: ['q'], answer: 'a', evidence: 'e', referenceFacts: ['f'] });
+    expect(String(llm.calls[0]!.messages[0]!.content)).toContain('<authenticated_merchant>cliente1988</authenticated_merchant>');
     expect(result.groundedness).toBe(4);
     expect(llm.calls[0]!.forceTool).toBe('record_scores');
     expect(String(llm.calls[0]!.messages[0]!.content)).toContain('<reference_facts>\n- f');

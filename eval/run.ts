@@ -71,7 +71,7 @@ function evidenceText(e: Evidence | null): string {
 }
 
 async function runCase(c: GoldenCase, run: number): Promise<RunRecord> {
-  const base = { caseId: c.id, category: c.category, run, turns: c.turns ?? [], referenceFacts: c.reference_facts };
+  const base = { caseId: c.id, user: c.user, category: c.category, run, turns: c.turns ?? [], referenceFacts: c.reference_facts };
   const started = Date.now();
   if (c.api) {
     let res;
@@ -152,7 +152,7 @@ async function main() {
       try {
         record = await runCase(c, run);
       } catch (err) {
-        record = { caseId: c.id, category: c.category, run, turns: c.turns ?? [], referenceFacts: c.reference_facts, answer: '', evidence: '', checks: [{ name: 'request', pass: false }], latencyMs: 0, error: (err as Error).message.slice(0, 200) };
+        record = { caseId: c.id, user: c.user, category: c.category, run, turns: c.turns ?? [], referenceFacts: c.reference_facts, answer: '', evidence: '', checks: [{ name: 'request', pass: false }], latencyMs: 0, error: (err as Error).message.slice(0, 200) };
       }
       records.push(record);
       const failed = record.checks.filter((x) => !x.pass).map((x) => x.name);
@@ -169,7 +169,7 @@ async function main() {
     const judge = new Judge(judgeClient(), JUDGE_MODEL);
     for (const r of records.filter((x) => x.answer && !x.error)) {
       try {
-        r.scores = await judge.score({ turns: r.turns, answer: r.answer, evidence: r.evidence, referenceFacts: r.referenceFacts });
+        r.scores = await judge.score({ merchant: r.user, turns: r.turns, answer: r.answer, evidence: r.evidence, referenceFacts: r.referenceFacts });
       } catch (err) {
         r.judgeError = (err as Error).message.slice(0, 200);
       }
@@ -178,7 +178,7 @@ async function main() {
       const c = golden.cases.find((x) => x.id === canary.case)!;
       const evidence = records.find((r) => r.caseId === c.id)?.evidence ?? '';
       try {
-        const scores = await judge.score({ turns: c.turns ?? [], answer: canary.answer, evidence, referenceFacts: c.reference_facts });
+        const scores = await judge.score({ merchant: c.user, turns: c.turns ?? [], answer: canary.answer, evidence, referenceFacts: c.reference_facts });
         canaries.push({ id: canary.id, target: canary.target, caught: canaryCaught(canary.target, scores), scores });
       } catch {
         canaries.push({ id: canary.id, target: canary.target, caught: false });
