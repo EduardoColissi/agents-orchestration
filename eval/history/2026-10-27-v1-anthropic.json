@@ -1,0 +1,312 @@
+{
+  "summary": {
+    "scenarios": 15,
+    "fully_passing": 15,
+    "route_accuracy": 1,
+    "plan_accuracy": 1,
+    "tool_accuracy": 1,
+    "source_coverage": 1,
+    "content_match": 1,
+    "handoff_accuracy": 1,
+    "p50_latency_ms": 6772,
+    "p95_latency_ms": 13604
+  },
+  "rows": [
+    {
+      "id": "1",
+      "route": "knowledge",
+      "latency_ms": 9381,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        },
+        {
+          "name": "sources",
+          "pass": true
+        },
+        {
+          "name": "content",
+          "pass": true
+        }
+      ],
+      "answer": "The excerpts I found don't have a full side-by-side comparison, and they say little about the Get Clássica's features. Here is what they do cover.\n\n**Monthly cost if you don't reach the sales threshold (rental plan)**\n- Get Clássica: R$ 79.90/month\n- Get Smart: R$ 129.90/month\n\n**Sales needed for a free machine**\n- At R$ 10k/month in sales, you can get the Get Mini or the Get Clássica free.\n- At R$ 60k/month, the Get Smart is also available.\n\n**Get Smart features**\n- It is exclusive to CNPJ (company) accounts with revenue above R$10k/month.\n- It has an app store with more than 150 solutions, such as cashback, giftback and inventory control.\n- It prints receipts, has a barcode reader and integrated management software.\n- It can be used as a TEF solution, integrated with your cash register automation.\n- It supports payment splitting.\n\nI couldn't find the Get Clássica's technical specs in Getnet's official content. For a detailed feature comparison, check the Getnet app or contact customer service.\n\nI've handed your request over to a Getnet human specialist (ticket TCK-1F12F718). They will contact you through your registered channels; if it's urgent, call Getnet customer service and mention the ticket."
+    },
+    {
+      "id": "2",
+      "route": "knowledge",
+      "latency_ms": 8295,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        },
+        {
+          "name": "sources",
+          "pass": true
+        },
+        {
+          "name": "content",
+          "pass": true
+        }
+      ],
+      "answer": "Tomorrow (Wednesday, Oct 28) in Porto Alegre should be mostly cloudy and mostly dry.\n\n- **Conditions:** Weather Underground lists Wed 10/28 as mostly cloudy, with a high of 77°F and a low of 61°F, and 0 precipitation. That's roughly 25°C and 16°C.\n- **Second source:** Ventusky also shows Wednesday as mostly cloudy, at about 73°F (about 23°C).\n- **Rain:** Rain is expected on Thursday, not tomorrow.\n\nThese forecasts seem to have been published a few days ago, so check a live weather app for updates."
+    },
+    {
+      "id": "3",
+      "route": "support",
+      "latency_ms": 6246,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        },
+        {
+          "name": "content",
+          "pass": true
+        }
+      ],
+      "answer": "Most of yesterday's sales (Monday, 2026-10-26) are due today, Tuesday, 2026-10-27. All amounts below are gross, so fees are discounted at settlement.\n\n- **Pix:** BRL 27.00 was already paid on 2026-10-26.\n- **Credit:** BRL 438.90 is scheduled for today, 2026-10-27.\n- **Debit:** BRL 42.50 is scheduled for today, 2026-10-27.\n\nThe total for yesterday is BRL 508.40 gross. The credit and debit amounts go to your Santander account (Ag 1234, CC ****-5). That matches your Get Smart plan, which pays in 1 business day.\n\nIf the credit and debit amounts aren't in your account by the end of today, tell me and I'll open a ticket."
+    },
+    {
+      "id": "4",
+      "route": "knowledge",
+      "latency_ms": 6902,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        },
+        {
+          "name": "sources",
+          "pass": true
+        }
+      ],
+      "answer": "You need an account to receive Pix sales, but it doesn't have to be a traditional bank account. It also doesn't have to be a Getnet account.\n\n- **Pix key:** To sign up for Pix at Getnet, you give one Pix key that is linked to the account where you want to receive the money.\n- **Existing bank account:** One Getnet FAQ page lists these requirements: a compatible capture method (terminal, TEF or e-commerce), a Santander bank domicile with an active Pix key, and registration with an individual (PF) legal representative. Another page says you can sign up using the same key you registered with your bank. It adds that availability depends on which payment service providers (PSPs) are already integrated with Getnet, so check with customer service.\n- **No bank account:** Get Conta is a free digital account for your business. You can send and receive money and sell through Pix with it. You can also open one without a card machine through digital onboarding (\"Credenciamento\" > \"Sem máquina\").\n\nTo confirm which accounts work for your business, contact customer service at 4002 4000 or 0800 648 8000, or use the Getnet app."
+    },
+    {
+      "id": "5",
+      "route": "support",
+      "latency_ms": 13604,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "plan",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        },
+        {
+          "name": "content",
+          "pass": true
+        }
+      ],
+      "answer": "Your Get Smart machine (GS-1988-0001) has had no Wi-Fi signal for \"PaoDourado\" since its last restart. Its 4G chip is active, so 4G is available as a backup. I couldn't find a step-by-step guide for Wi-Fi problems in Getnet's official content, so the steps below are general suggestions rather than official policy.\n\n- **Check the router.** Make sure the \"PaoDourado\" router is on and the internet is working, for example by testing another device. Keep the machine close to the router.\n- **Switch to 4G.** Use the active chip as your connection while Wi-Fi is down.\n- **Run a communication test.** Getnet's FAQ describes this test for chip connectivity. Press the function button (F, # or the one on your machine), then 60, then option 2 (maintenance), then option 1 (communication test). The FAQ is written for other machine models, so the menu may differ on your Get Smart.\n- **Restart the machine.** Do this after the steps above.\n\nIf it's still offline after these steps, I can open a ticket for you. You can also contact Getnet through the app or customer service.\n\nI've handed your request over to a Getnet human specialist (ticket TCK-14A8EDD8). They will contact you through your registered channels; if it's urgent, call Getnet customer service and mention the ticket."
+    },
+    {
+      "id": "6",
+      "route": "knowledge",
+      "latency_ms": 8037,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        },
+        {
+          "name": "sources",
+          "pass": true
+        },
+        {
+          "name": "content",
+          "pass": true
+        }
+      ],
+      "answer": "Here is what Getnet's official content says about receivables advance (antecipação de vendas):\n\n- **When you can advance:** A sale becomes available for advance from D+1 (one business day after the sale) until D-3 (three business days before the amount would be credited to your account). For example, a sale made on 04/03 can be advanced from 05/03. If the credit date is 03/04, it can be advanced until 31/03.\n- **How to request it:** the options are the same for Santander account holders and non-holders:\n  - Automatic advance\n  - One-off advance through Getnet's Customer Service\n  - Advance on the POS, done by the merchant on the Getnet terminal\n- **Extra options for Santander account holders:** through your branch manager, or through Internet Banking (including the business channel, if it is enabled).\n- **Checking it:** The day after the advance, you can see the advanced Mastercard/Visa sales in the Santander Portal under Consultas > Extratos por período > Antecipação por período.\n- **Automatic advance and fees:** Automatic advance is a condition for the exemption on the \"Receba Conforme suas Vendas\" plan. Getnet assesses each contract individually, as it involves credit approval. The standard sales rates don't include the advance fee, if you contract it.\n\nI couldn't find the specific advance fee percentages in the excerpts. Check them in the Getnet app or by calling Customer Service."
+    },
+    {
+      "id": "7",
+      "route": "knowledge",
+      "latency_ms": 6883,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        },
+        {
+          "name": "sources",
+          "pass": true
+        },
+        {
+          "name": "content",
+          "pass": true
+        }
+      ],
+      "answer": "The euro is trading at about **R$5.57–5.58** per €1. The most recent quotes are from Oct 25–26, 2026, so the rate may have moved slightly today.\n\n- XE showed 1 EUR = 5.56749 BRL at 14:18 UTC on Oct 26, 2026.\n- Wise's mid-market rate was €1 = 5.576 BRL.\n- Coinbase listed 1 EUR at R$5.58.\n\nOne Wise history page showed a figure near 6.15, but it's far from every other source, so I'd treat it as a data error.\n\nThese are mid-market reference rates. Banks and money-transfer services usually apply their own spread, so the rate you actually get will differ."
+    },
+    {
+      "id": "8",
+      "route": "support",
+      "latency_ms": 8092,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        },
+        {
+          "name": "content",
+          "pass": true
+        }
+      ],
+      "answer": "Your machine has two kinds of problem.\n\n**Declines (issuer-side, not a machine fault):**\n- **Today, Tue 2026-10-27, 08:31:** BRL 230.00 on Mastercard credit, code 05. The card issuer didn't authorize it. The customer should contact their bank or use another card.\n- **Yesterday, Mon 2026-10-26, 16:45:** BRL 89.90 on Visa credit, code 51. The card had insufficient funds or limit. The customer can use another card, Pix, or a lower amount.\n\nAmounts are gross (fees are discounted at settlement).\n\n**Machine (Get Smart, GS-1988-0001):** It is **offline** and was last seen around 21:00 last night. The error is NETWORK_UNREACHABLE. The Wi-Fi network \"PaoDourado\" has had no signal since the last restart. The 4G chip is active and its data plan is included.\n\n**Next steps:**\n1. Restart the machine and check that the router is working.\n2. If Wi-Fi doesn't reconnect, switch the machine to the 4G chip in its network settings.\n3. Until it is back online, take payments by Pix or cash.\n\nIf it is still offline after that, or by tomorrow, tell me and I'll open a ticket."
+    },
+    {
+      "id": "9",
+      "route": "knowledge",
+      "latency_ms": 6113,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        }
+      ],
+      "answer": "There isn't a fixed number of installments for the crediário. Each card issuer sets the installment limit according to its own credit policies.\n\nTo see the options and interest for a specific sale:\n- On the card machine, insert the card, enter the amount and choose credit > crediário. The machine will show a simulation.\n- You can print the simulation if the machine has paper, so your customer can see the interest and the final purchase amount.\n- The simulation is for reference only and is subject to credit analysis. The card issuer decides whether to approve the transaction.\n\nFor you as the merchant, the number of installments doesn't change when you get paid. Crediário sales are paid in a single payment, within 2 business days after the transaction is captured, however many installments the cardholder chooses."
+    },
+    {
+      "id": "10",
+      "route": "knowledge",
+      "latency_ms": 6772,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        },
+        {
+          "name": "sources",
+          "pass": true
+        },
+        {
+          "name": "content",
+          "pass": true
+        }
+      ],
+      "answer": "Yes. Getnet's Payment Link (Get Link & Pay) is meant for selling through WhatsApp, SMS or your preferred social network.\n\n- **Sharing:** You can make sales using WhatsApp, SMS or your preferred social network.\n- **Customization:** The link can be customized with product details.\n- **Security:** The link includes anti-fraud security.\n- **Payment methods:** The Brazilian Payment Link page says it accepts debit, credit, Pix, Wallet and boleto. The English page only mentions debit and credit.\n\n**Before you start:**\n- Even if you already use Getnet in-store, you must pass the risk and prevention reviews before online sales are enabled.\n- If you go more than 4 months without any transactions, the Payment Link is disabled and you have to go through all the approvals again."
+    },
+    {
+      "id": "PT1",
+      "route": "support",
+      "latency_ms": 6047,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        },
+        {
+          "name": "content",
+          "pass": true
+        }
+      ],
+      "answer": "As vendas de ontem (segunda, 26/10/2026) somam R$ 508,40 brutos. Os valores são brutos, porque as taxas são descontadas na liquidação. O dinheiro cai assim:\n\n- **Pix:** R$ 27,00. Já foi pago ontem, 26/10.\n- **Crédito:** R$ 438,90. Está agendado para hoje, terça-feira, 27/10.\n- **Débito:** R$ 42,50. Também está agendado para hoje, terça-feira, 27/10.\n\nFicam R$ 481,40 brutos para cair hoje. O depósito vai para a conta Santander, Ag 1234, CC ****-5. O seu plano é o Get Smart, com recebimento em 1 dia útil.\n\nSe o valor não aparecer na conta até o fim do dia, me avise que eu verifico."
+    },
+    {
+      "id": "N1",
+      "route": "blocked",
+      "latency_ms": 332,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        }
+      ],
+      "answer": "I can't help with that request. I can answer questions about Getnet products or about your own account, sales and card machines."
+    },
+    {
+      "id": "N2",
+      "route": "escalation",
+      "latency_ms": 1299,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "handoff",
+          "pass": true
+        }
+      ],
+      "answer": "I've handed your request over to a Getnet human specialist (ticket TCK-18DA93D7). They will contact you through your registered channels; if it's urgent, call Getnet customer service and mention the ticket."
+    },
+    {
+      "id": "N3",
+      "route": "support",
+      "latency_ms": 1703,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "handoff",
+          "pass": true
+        }
+      ],
+      "answer": "I couldn't find a Getnet account linked to this user, so I can't check sales, deposits or card machines. Please check you're signed in with the right user, or I can hand you over to a human agent."
+    },
+    {
+      "id": "N5",
+      "route": "blocked",
+      "latency_ms": 1694,
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        }
+      ],
+      "answer": "I can't help with that request. I can answer questions about Getnet products or about your own account, sales and card machines."
+    }
+  ]
+}

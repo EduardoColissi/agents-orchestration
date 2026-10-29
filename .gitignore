@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.models/
+.env
+eval-report.json
+*.log
