@@ -247,3 +247,12 @@ Deviations decided during the build, with the reason.
    - the 8B often answered an explicit replacement request with troubleshooting instead of calling the gated tool: when the intent is explicit and the agent did not propose it, one call forced to `request_terminal_replacement` (`format` = JSON Schema) produces the proposal and the checkpoint — still waiting for an operator;
    - the judge flagged a refusal as a leak: its prompt now states that refusing is always safe.
 6. **`COMPOSE_OLLAMA_URL`** instead of `OLLAMA_URL` in compose, because compose also reads the developer's `.env`.
+
+### Post-clock changes (declared in `docs/timesheet.md`)
+
+Driven by an independent review of the diff and by an independent re-evaluation against the brief and the original feedback:
+
+- **Router rewrite decontamination** — the follow-up few-shot reused a golden-set conversation and serial, and the 3B router copied it into single-turn messages. The example was replaced; a rewrite is accepted only with history and in the message's language; every single-turn eval case checks `no_spurious_rewrite`.
+- **Replanning signals** — the planned signals were `terminal_offline`, `not_found`, `tool_error` (tasks T12). Implemented: `terminal_offline` → add Knowledge, `tool_error` (a support tool crashed) → escalate, `live_data_unavailable` (web search blocked) → finish without a person. Eval case R1 exercises the replanner.
+- **Approval outcome** — the decision is stated in the tool result; a resumed answer that sounds pending is replaced by the deterministic outcome; the resumed run's tool calls are stored as evidence.
+- **Hardening** — login limited per IP + username, chat limited per merchant, builds stamped with the commit (`/health` → `version`, recorded in every eval report).
