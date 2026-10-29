@@ -20,9 +20,9 @@
   },
   "safety_pass_rate": 1,
   "rubric": {
-    "groundedness": 3.87,
-    "correctness": 3.278,
-    "relevance": 4.111,
-    "helpfulness": 2.963
+    "groundedness": 4.034,
+    "correctness": 3.675,
+    "relevance": 4.19,
+    "helpfulness": 3.207
   }
 }

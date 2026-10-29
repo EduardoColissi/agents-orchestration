@@ -48,6 +48,10 @@ const OPERATOR = process.env.EVAL_OPERATOR ?? 'op.ana';
 const JUDGE_PROVIDER = process.env.JUDGE_PROVIDER ?? 'ollama';
 const JUDGE_MODEL = process.env.JUDGE_MODEL ?? (JUDGE_PROVIDER === 'anthropic' ? 'claude-sonnet-5-5' : 'qwen2.5:7b');
 const JUDGE_OLLAMA_URL = process.env.JUDGE_OLLAMA_URL ?? process.env.OLLAMA_URL ?? 'http://localhost:11434';
+// A JUDGE_MODEL left in .env for the local judge must not be sent to Anthropic (and vice versa).
+if (!flag('skip-judge') && (JUDGE_PROVIDER === 'anthropic') !== JUDGE_MODEL.startsWith('claude-')) {
+  throw new Error(`JUDGE_MODEL ${JUDGE_MODEL} does not belong to JUDGE_PROVIDER ${JUDGE_PROVIDER}: set both, e.g. JUDGE_PROVIDER=anthropic JUDGE_MODEL=claude-sonnet-5-5`);
+}
 
 const golden = JSON.parse(readFileSync('eval/golden.json', 'utf8')) as Golden;
 

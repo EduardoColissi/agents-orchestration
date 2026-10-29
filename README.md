@@ -2,7 +2,14 @@
 
 A multi-agent API for Getnet merchants: a **Router** sends each message to a **Knowledge** agent (RAG over Getnet's site + web search) and/or a **Customer Support** agent (tools over the merchant's own data), with guardrails, persistent conversations, real authentication, an operational **human-in-the-loop** queue and a semantic evaluation that runs against the deployed API. It runs fully local and free by default (Ollama), on any machine, with one command.
 
-v2 is a timed rebuild of [v1](https://github.com/EduardoColissi/agents-orchestration/tree/v1) driven by the reviewer's feedback. It keeps what was rated strong and closes the loops that were left open. Spec-Driven Development: [`docs/spec.md`](docs/spec.md) → [`docs/plan.md`](docs/plan.md) → [`docs/tasks.md`](docs/tasks.md), written and committed before the clock. **Build time: 39 min 41 s** (tags `v2-clock-start` → `v2-clock-end`, every commit listed in [`docs/timesheet.md`](docs/timesheet.md)).
+## How this was built
+
+1. **v1** (tag [`v1-submission`](https://github.com/EduardoColissi/agents-orchestration/tree/v1-submission)) was the original submission. It received a detailed review: strong orchestration, RAG and guardrails; weak memory (1.0/10), authentication, human-in-the-loop (4.0/10) and evaluation.
+2. **v2** was rebuilt from v1 to close those gaps, with Spec-Driven Development: [`docs/spec.md`](docs/spec.md) → [`docs/plan.md`](docs/plan.md) → [`docs/tasks.md`](docs/tasks.md), written and committed before the clock. **The core was built in 39 min 41 s** (tags `v2-clock-start` → `v2-clock-end`; the first commit of the clock imports v1 and says so).
+3. **After the clock**, three verification passes produced further `fix:` commits, each declared as post-clock in [`docs/timesheet.md`](docs/timesheet.md): an independent review of the whole diff, a re-evaluation of the result against the brief and the review (same rubric), and a hands-on walk through the test plan — starting with the review's own example, "Minha maquininha está offline.", which still answered badly ([why, and what changed](#design-decisions-and-trade-offs)).
+4. This branch merges v2 into v1: both histories are preserved, the content is v2's. The companion [UI](https://github.com/EduardoColissi/agents-orchestration-UI) (merchant chat + operator console) was updated to the v2 API.
+
+The result keeps what was rated strong and closes the loops that were left open. [`docs/checklist.md`](docs/checklist.md) maps every point of the brief and of the review to where it lives and how it is proved. Video walkthrough: _link added after recording_.
 
 ## What changed from v1
 
@@ -104,7 +111,7 @@ npm test                   # 162 tests, offline, scripted fake LLM, SQLite in me
 npm run typecheck
 npm run eval -- --runs 3   # semantic evaluation of the running API (EVAL_BASE_URL, default localhost:3000)
 npm run eval -- --runs 1 --only 3,5,MT1,R1,H2   # a few cases (partial runs skip the baseline gate)
-JUDGE_PROVIDER=anthropic npm run eval -- --rejudge eval/reports/<report>.json   # score the same answers with Claude
+JUDGE_PROVIDER=anthropic JUDGE_MODEL=claude-sonnet-5-5 npm run eval -- --rejudge eval/reports/<report>.json   # score the same answers with Claude
 docker compose --profile eval run --rm eval --runs 3     # same, using only Docker (repeat the -f files you started with, e.g. the GPU override)
 ```
 
@@ -215,40 +222,40 @@ resuming ──boot recovery──► completed         (same delivery, idempote
 
 ### Results
 
-The full golden set (22 cases × 3 runs at the clock end; 23 with the replanning case later) against the Docker stack with GPU, each run scored by both judges with `--rejudge` on identical answers. Every report records the API build and the runner commit.
+The full golden set (22 cases × 3 runs at the clock end; 23 with the replanning case later) against the Docker stack with GPU, three times along the way — at the clock end, after the re-evaluation and on the final branch — each run scored by both judges with `--rejudge` on identical answers. Every report records the API build and the runner commit.
 
 **Deterministic checks** (judge-independent)
 
-| Check | Clock-end code (`v2-clock-end`) | Final code (`be33529`) |
-|---|---|---|
-| route · plan · tools | 1.0 · 1.0 · 1.0 | 1.0 · 1.0 · 1.0 |
-| follow-up rewrite · **no rewrite on single messages** | 1.0 · *(not checked)* | 1.0 · **1.0** |
-| replanning fired (case R1) | *(no case)* | **1.0** |
-| HITL: approval proposed · operator resolve · outcome delivered | 0.78 · 0.92 · 0.83 | **1.0 · 1.0 · 1.0** |
-| handoff as expected (live-data questions do not reach the queue) | 1.0 | 1.0 |
-| authorization (403 `user_mismatch`, 404 foreign conversation) · no cross-merchant data | 1.0 · 1.0 | 1.0 · 1.0 |
-| sources | 0.71 | 0.71 — only the two web cases: DuckDuckGo answers this network with a bot challenge |
-| latency p50 · p95 | 3.8 s · 19.1 s | 5.2 s · 19.1 s |
+| Check | Clock end (`v2-clock-end`) | After the re-evaluation (`be33529`) | **Final (`8f62d3f`)** |
+|---|---|---|---|
+| route · plan · tools | 1.0 · 1.0 · 1.0 | 1.0 · 1.0 · 1.0 | **0.98** · 1.0 · 1.0 — one follow-up out of 69 records sent to a person by the 3B router |
+| follow-up rewrite · **no rewrite on single messages** | 1.0 · *(not checked)* | 1.0 · **1.0** | 1.0 · 1.0 |
+| replanning fired (case R1) | *(no case)* | **1.0** | 1.0 |
+| HITL: approval proposed · operator resolve · outcome delivered | 0.78 · 0.92 · 0.83 | **1.0 · 1.0 · 1.0** | 1.0 · 1.0 · 1.0 |
+| handoff as expected (live-data questions do not reach the queue) | 1.0 | 1.0 | 1.0 |
+| authorization (403 `user_mismatch`, 404 foreign conversation) · no cross-merchant data | 1.0 · 1.0 | 1.0 · 1.0 | 1.0 · 1.0 |
+| sources | 0.71 | 0.71 | 0.71 — only the two web cases: DuckDuckGo answers this network with a bot challenge |
+| latency p50 · p95 | 3.8 s · 19.1 s | 5.2 s · 19.1 s | 3.2 s · 25.2 s |
 
 **Judges** (1–5, mean over the judged records; spread in the reports)
 
-| Metric | qwen2.5:7b, local · clock-end / final | **Claude Sonnet, reference** · clock-end / final |
+| Metric | qwen2.5:7b, local · clock end / re-evaluation / final | **Claude Sonnet, reference** · clock end / re-evaluation / final |
 |---|---|---|
-| groundedness | 4.50 / 4.25 | **3.37 / 3.87** |
-| correctness (vs reference facts) | 4.62 / 4.45 | **2.87 / 3.28** |
-| relevance | 4.65 / 4.68 | **3.90 / 4.11** |
-| helpfulness | 4.48 / 4.50 | **2.80 / 2.96** |
-| safety pass rate | 0.85 / 0.77 | **1.0 / 1.0** |
-| canaries caught | 2/4 → `judge_unreliable` | **4/4** |
+| groundedness | 4.50 / 4.25 / 4.58 | **3.37 / 3.87 / 4.03** |
+| correctness (vs reference facts) | 4.62 / 4.45 / 4.79 | **2.87 / 3.28 / 3.68** |
+| relevance | 4.65 / 4.68 / 4.73 | **3.90 / 4.11 / 4.19** |
+| helpfulness | 4.48 / 4.50 / 4.65 | **2.80 / 2.96 / 3.21** |
+| safety pass rate | 0.85 / 0.77 / 0.75 | **1.0 / 1.0 / 1.0** |
+| canaries caught | 2/4 · 2/4 · 1/4 → `judge_unreliable` | **4/4 · 4/4 · 4/4** |
 
 How to read it:
 
 - **The canaries did their job.** The local 7B judge misses known defects, flags the merchant's *own* masked bank account as unsafe and inflates scores by about a point. Claude catches all four canaries without false safety alarms, so it is the reference: **`eval/baseline.json` comes from the Claude-judged final run**. The gate compares rubric scores only against a baseline from the same judge, and deterministic checks always (the gate caught a regression during the post-clock work: [handoff 0.905](eval/reports/2026-10-29T18-43-11-441Z.md), fixed in `be33529`).
-- **What changed between the two runs** comes from the post-clock fixes, all in the deterministic layer around the same models: the router no longer copies its prompt example into single messages (that was misrouting replacement requests and mixing languages), approval outcomes always state the decision and the ticket (HITL groundedness/correctness by Claude: 4.8 / 5.0), live-data questions no longer reach the human queue, and replanning now fires.
-- **What the reference judge still says:** account support is strong (groundedness 4.2), HITL outcomes are correct, but RAG answers on `llama3.1:8b` are often incomplete or wrong (correctness 2.9 — e.g. the Pix answer says no bank account is needed, the advance answer confuses *gravame*, the comparison omits the rental prices). That is the quality ceiling of the 8B on a 12 GB GPU, not of the pipeline; `LLM_PROVIDER=anthropic` runs the same pipeline on Claude.
+- **What changed between the runs** comes from the post-clock fixes, all in the deterministic layer around the same models. After the re-evaluation: the router no longer copies its prompt example into single messages, approval outcomes always state the decision and the ticket, live-data questions no longer reach the human queue, replanning fires. After the test-plan walkthrough: the offline-machine guide is found (bilingual playbook, searched in code on Support's signal), support facts and guidance are joined in code, settlement days are labelled in code — by Claude, correctness went from 3.28 to 3.68 and HITL, replanning and the multi-step case score 5.0 / 5.0 / 4.3 on correctness.
+- **What the reference judge still says:** account support is strong (groundedness 4.4), HITL and replanning outcomes are correct, but RAG answers on `llama3.1:8b` are often incomplete or wrong (correctness 2.6 on the RAG cases — e.g. the Pix answer says no bank account is needed, the advance answer confuses *gravame*, the comparison omits the rental prices). That is the quality ceiling of the 8B on a 12 GB GPU, not of the pipeline; `LLM_PROVIDER=anthropic` runs the same pipeline on Claude.
 - Operator-written replies are checked deterministically but not judged (they are a person's text, not the system's output).
 
-Reports: clock-end [qwen](eval/reports/2026-10-29T16-37-18-256Z.md) / [Claude](eval/reports/2026-10-29T16-56-11-834Z.md) (its gate failure was the cross-judge comparison fixed in `0f872f7`) · final [qwen](eval/reports/2026-10-29T18-56-50-574Z.md) / [Claude = baseline](eval/reports/2026-10-29T19-00-39-798Z.md). Operational metrics: [`docs/evidence/metrics.json`](docs/evidence/metrics.json) (the escalation rate is high by design: a third of the golden set exercises the human queue).
+Reports: clock end [qwen](eval/reports/2026-10-29T16-37-18-256Z.md) / [Claude](eval/reports/2026-10-29T16-56-11-834Z.md) (its gate failure was the cross-judge comparison fixed in `0f872f7`) · after the re-evaluation [qwen](eval/reports/2026-10-29T18-56-50-574Z.md) / [Claude](eval/reports/2026-10-29T19-00-39-798Z.md) · final [qwen](eval/reports/2026-10-29T22-48-31-737Z.md) / [Claude = baseline](eval/reports/2026-10-29T22-54-20-265Z.md). Operational metrics from the final run's database: [`docs/evidence/metrics.json`](docs/evidence/metrics.json) (the escalation rate, 0.24, is by design: a quarter of the golden set exercises the human queue).
 
 The development runs inside the clock ([`eval/reports/2026-10-29T16-1*`, `16-2*`](eval/reports)) found real model behaviours that unit tests with a fake LLM cannot: the 3B router labelling English as Portuguese, the 8B inventing a ticket number, wrapping or misnaming the serial of the gated tool, and proposing a replacement for a connectivity problem. Each became a fix with a test (plan §14). An independent re-evaluation after the clock found the router copying its own example — fixed and now checked on every single-turn case. v1's real run (Claude, 15/15 lexical) is in [`eval/history/`](eval/history).
 

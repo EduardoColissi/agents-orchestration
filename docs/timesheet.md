@@ -35,7 +35,7 @@ Generated from `git log`. Writing the spec, plan and tasks happened before the c
 
 ## After the clock (declared)
 
-Everything below is verification and documentation, not part of the 60 minutes. Code fixes found here are separate `fix:` commits.
+Everything below is verification and documentation, not part of the 60 minutes. Code fixes found here are separate `fix:` commits, in three passes: an independent review of the diff (13:33–14:07), a re-evaluation against the brief and the original review (15:18–16:01), and a hands-on walk through the test plan with the review's own example (16:58–19:30). The `final` branch (19:30) merges v2 into v1.
 
 | Time | Commit | Message |
 |---|---|---|
@@ -56,7 +56,17 @@ Everything below is verification and documentation, not part of the 60 minutes. 
 | 15:32:19 | `5d355d6` | feat: rate limit chat turns per merchant and stamp builds into eval reports |
 | 15:44:19 | `be33529` | fix(orchestration): a finished live-data answer is not flagged for a human either |
 | 15:44:28 | `51e70ba` | docs: correct README claims found by the independent re-evaluation |
-| 16:01:34 | (this commit) | docs: final evaluation results and timesheet |
+| 16:01:58 | `9a09383` | docs: final evaluation results and timesheet |
+| 16:58:50 | `887a0a2` | fix(auth): close the login rate-limit bypass found in the re-evaluation |
+| 18:30:06 | `4e6764d` | fix(knowledge): find the playbook in Portuguese and keep the support answer when knowledge finds nothing |
+| 18:30:06 | `054d787` | fix(support): label settlement days relative to today in code |
+| 18:30:06 | `c2ff2c5` | docs: how to verify, configure, run the UI and the evaluation; how the agents use tools |
+| 18:39:21 | `9e8bd2f` | fix(knowledge): search the offline-machine guide in code when support reports one |
+| 18:53:31 | `16abfff` | fix(orchestration): join support facts and knowledge guidance in code |
+| 19:01:59 | `1dd9c26` | fix: drop restated facts from the guidance and summarize settlements in code |
+| 19:30:01 | `c24d56a` | docs(plan): record the fixes found by walking through the test plan |
+| 19:38 | `8f62d3f` | Merge v2 into v1 (branch `final`: v1's history + v2's history, v2's content) |
+| — | (this commit) | docs: timeline, final evaluation and timesheet |
 
 Verification after the clock:
 
@@ -64,3 +74,5 @@ Verification after the clock:
 - Independent re-evaluation of the submission against the brief and the original feedback (same rubric): found the router copying its prompt example into single-turn messages, replanning that never fired, an approval outcome that contradicted the decision, and README claims that did not hold — all fixed in the commits above.
 - Evaluations against the Docker stack (22–23 cases × 3): clock-end code and final code, each re-judged with Claude; the gate caught one regression on the way (handoff 0.905, fixed in `be33529`). Baseline from the Claude-judged final run.
 - `docker compose restart api` evidence, GPU and metrics snapshots in `docs/evidence/`.
+- Hands-on walk through the test plan (16:58–19:30), starting with the review's own example: the Portuguese playbook, the offline guide searched in code, the composed support + knowledge answer, the settlement day labels and a login-limit bypass — each a `fix:` with a test (plan §14).
+- Final evaluation on the `final` branch (build `8f62d3f`, 23 × 3, fresh database): deterministic checks 1.0 except sources 0.71 (web cases blocked) and route 0.98 (one follow-up sent to a person by the 3B router); by Claude, 4/4 canaries, groundedness 4.03 · correctness 3.68 · relevance 4.19 · helpfulness 3.21 · safety 1.0, gate passed; new baseline. UI smoke 26/26 against the same build.
