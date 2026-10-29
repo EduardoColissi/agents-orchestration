@@ -145,7 +145,63 @@ function judgeClient(): LLMClient {
   return new OllamaClient(JUDGE_OLLAMA_URL, JUDGE_MODEL, fetch, { numCtx: 8192, keepAlive: '10m' });
 }
 
+/** `--rejudge <report.json>`: score the records of an existing report again (e.g. with a stronger judge). */
+async function rejudge(path: string) {
+  const report = JSON.parse(readFileSync(path, 'utf8')) as { meta: Record<string, unknown>; records: RunRecord[] };
+  const generatorFamilies = new Set(Object.values((report.meta.generator ?? {}) as Record<string, string>).map(familyOf));
+  if (generatorFamilies.has(familyOf(JUDGE_MODEL))) throw new Error(`judge ${JUDGE_MODEL} is from the generator's family`);
+  const judge = new Judge(judgeClient(), JUDGE_MODEL);
+  const records = report.records.map((r) => ({ ...r, scores: undefined, judgeError: undefined }) as RunRecord);
+  for (const r of records.filter((x) => x.answer && !x.error)) {
+    try {
+      r.scores = await judge.score({ merchant: r.user, turns: r.turns, answer: r.answer, evidence: r.evidence, referenceFacts: r.referenceFacts });
+    } catch (err) {
+      r.judgeError = (err as Error).message.slice(0, 200);
+    }
+  }
+  const canaries = await scoreCanaries(judge, records);
+  return { meta: { ...report.meta, judge: `${JUDGE_PROVIDER}:${JUDGE_MODEL}`, rejudged_from: path, rejudged_at: new Date().toISOString() }, records, canaries };
+}
+
+async function scoreCanaries(judge: Judge, records: RunRecord[]): Promise<CanaryResult[]> {
+  const canaries: CanaryResult[] = [];
+  for (const canary of golden.canaries) {
+    const c = golden.cases.find((x) => x.id === canary.case)!;
+    const evidence = records.find((r) => r.caseId === c.id)?.evidence ?? '';
+    try {
+      const scores = await judge.score({ merchant: c.user, turns: c.turns ?? [], answer: canary.answer, evidence, referenceFacts: c.reference_facts });
+      // Safety is judged AND checked deterministically; either one catching the leak counts.
+      const leak = canary.target === 'safety' && !!crossMerchantLeak(canary.answer, c.user);
+      canaries.push({ id: canary.id, target: canary.target, caught: canaryCaught(canary.target, scores) || leak, scores });
+    } catch {
+      canaries.push({ id: canary.id, target: canary.target, caught: false });
+    }
+  }
+  return canaries;
+}
+
+function writeReport(meta: Record<string, unknown>, records: RunRecord[], canaries: CanaryResult[]) {
+  const summary = summarize(records, canaries);
+  const baseline = existsSync('eval/baseline.json') ? (JSON.parse(readFileSync('eval/baseline.json', 'utf8')) as Baseline) : null;
+  const gateFailures = flag('update-baseline') ? [] : gate(summary, baseline);
+  mkdirSync('eval/reports', { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  writeFileSync(`eval/reports/${stamp}.json`, `${JSON.stringify({ meta, summary, gate: gateFailures, canaries, records }, null, 2)}\n`);
+  writeFileSync(`eval/reports/${stamp}.md`, renderMarkdown(meta, summary, records, canaries, gateFailures));
+  if (flag('update-baseline')) writeFileSync('eval/baseline.json', `${JSON.stringify(toBaseline(summary), null, 2)}\n`);
+  console.log(`\n${JSON.stringify({ rubric: summary.rubric, deterministic: summary.deterministic, safety: summary.safety_pass_rate, judge_unreliable: summary.judge_unreliable, latency_ms: summary.latency_ms }, null, 1)}`);
+  console.log(`Report: eval/reports/${stamp}.md`);
+  if (gateFailures.length) {
+    console.error(`Gate failed:\n${gateFailures.join('\n')}`);
+    process.exit(1);
+  }
+}
+
 async function main() {
+  if (flag('rejudge')) {
+    const { meta, records, canaries } = await rejudge(option('rejudge')!);
+    return writeReport(meta, records, canaries);
+  }
   const health = await api.health();
   const generator = (health.models ?? {}) as Record<string, string>;
   const generatorFamilies = new Set(Object.values(generator).map(familyOf));
@@ -185,37 +241,12 @@ async function main() {
         r.judgeError = (err as Error).message.slice(0, 200);
       }
     }
-    for (const canary of golden.canaries) {
-      const c = golden.cases.find((x) => x.id === canary.case)!;
-      const evidence = records.find((r) => r.caseId === c.id)?.evidence ?? '';
-      try {
-        const scores = await judge.score({ merchant: c.user, turns: c.turns ?? [], answer: canary.answer, evidence, referenceFacts: c.reference_facts });
-        // Safety is judged AND checked deterministically; either one catching the leak counts.
-        const leak = canary.target === 'safety' && !!crossMerchantLeak(canary.answer, c.user);
-        canaries.push({ id: canary.id, target: canary.target, caught: canaryCaught(canary.target, scores) || leak, scores });
-      } catch {
-        canaries.push({ id: canary.id, target: canary.target, caught: false });
-      }
-    }
+    canaries.push(...(await scoreCanaries(judge, records)));
   }
 
-  const summary = summarize(records, canaries);
-  const baseline = existsSync('eval/baseline.json') ? (JSON.parse(readFileSync('eval/baseline.json', 'utf8')) as Baseline) : null;
-  const gateFailures = flag('update-baseline') ? [] : gate(summary, baseline);
   const meta = { started_at: startedAt, finished_at: new Date().toISOString(), base_url: BASE_URL, generator, judge: flag('skip-judge') ? 'skipped' : `${JUDGE_PROVIDER}:${JUDGE_MODEL}`, runs: RUNS, only: ONLY ? [...ONLY] : null };
 
-  mkdirSync('eval/reports', { recursive: true });
-  const stamp = startedAt.replace(/[:.]/g, '-');
-  writeFileSync(`eval/reports/${stamp}.json`, `${JSON.stringify({ meta, summary, gate: gateFailures, canaries, records }, null, 2)}\n`);
-  writeFileSync(`eval/reports/${stamp}.md`, renderMarkdown(meta, summary, records, canaries, gateFailures));
-  if (flag('update-baseline')) writeFileSync('eval/baseline.json', `${JSON.stringify(toBaseline(summary), null, 2)}\n`);
-
-  console.log(`\n${JSON.stringify({ rubric: summary.rubric, deterministic: summary.deterministic, safety: summary.safety_pass_rate, judge_unreliable: summary.judge_unreliable, latency_ms: summary.latency_ms }, null, 1)}`);
-  console.log(`Report: eval/reports/${stamp}.md`);
-  if (gateFailures.length) {
-    console.error(`Gate failed:\n${gateFailures.join('\n')}`);
-    process.exit(1);
-  }
+  writeReport(meta, records, canaries);
 }
 
 main().catch((err) => {
