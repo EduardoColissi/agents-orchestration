@@ -267,7 +267,7 @@ export class Orchestrator {
     const final = supportStands
       ? support
       : last.agent === 'knowledge' && support !== undefined
-        ? { ...last, answer: [withoutTicketTalk(support.answer, support.handoff?.reason === 'support_ticket_opened'), last.answer].filter(Boolean).join('\n\n') }
+        ? { ...last, answer: composeAnswer(withoutTicketTalk(support.answer, support.handoff?.reason === 'support_ticket_opened'), last.answer) }
         : last;
     const allSources = dedupeSources(results.flatMap((r) => r.sources));
 
@@ -402,6 +402,18 @@ export function withoutTicketTalk(text: string, ticketOpened: boolean): string {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+const words = (text: string) => new Set(text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+
+/** Account facts, then the guidance without the paragraphs that only repeat them (the 8B restates them despite the prompt). */
+export function composeAnswer(facts: string, guidance: string): string {
+  const known = words(facts);
+  const fresh = guidance.split(/\n{2,}/).filter((paragraph) => {
+    const own = [...words(paragraph)];
+    return own.length === 0 || own.filter((w) => known.has(w)).length / own.length < 0.7;
+  });
+  return [facts, fresh.join('\n\n')].map((part) => part.trim()).filter(Boolean).join('\n\n');
 }
 
 /** "pt-BR" / "PT" → "pt"; anything that is not a 2-letter code is ignored. */

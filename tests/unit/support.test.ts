@@ -80,6 +80,10 @@ describe('support tools', () => {
     const out = await toolMap(repo(), 'cliente1988').get_settlements!.execute({ sale_date: '2026-10-22' });
     const days = Object.fromEntries(JSON.parse(out.content).settlements.map((s: { method: string; expectedDay: string }) => [s.method, s.expectedDay]));
     expect(days).toEqual({ debit: 'Friday 2026-10-23, today', credit: 'Friday 2026-10-23, today', pix: 'Thursday 2026-10-22, yesterday' });
+    expect(JSON.parse(out.content).summary).toEqual(expect.arrayContaining([
+      'pix 27.00: already deposited on Thursday 2026-10-22, yesterday',
+      'credit 438.90: to be deposited on Friday 2026-10-23, today',
+    ]));
   });
 
   it('rejects invalid input instead of throwing', async () => {

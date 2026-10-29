@@ -40,7 +40,7 @@ export function createSupportTools(repo: CustomerRepository, userId: string, now
 
     defineTool(
       'get_settlements',
-      'Get settlements (deposits of card/Pix sales into the bank account). Use sale_date to find when the sales of a given day will be/were deposited. Without sale_date, returns upcoming settlements. Amounts are gross (before fees). Each settlement has expectedDay ("Thursday 2026-10-29, today"): use it as written.',
+      'Get settlements (deposits of card/Pix sales into the bank account). Use sale_date to find when the sales of a given day will be/were deposited. Without sale_date, returns upcoming settlements. Amounts are gross (before fees). `summary` states what was already deposited and what is still to come, with the day: rely on it.',
       z.object({
         sale_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Sales date in YYYY-MM-DD'),
       }),
@@ -50,7 +50,9 @@ export function createSupportTools(repo: CustomerRepository, userId: string, now
         const settlements = (await repo.getSettlements(userId, sale_date ? { saleDate: sale_date } : { upcomingOnly: true }))
           .map((s) => ({ ...s, saleDay: day(s.saleDate), expectedDay: day(s.expectedDate) }));
         const total = settlements.reduce((sum, s) => sum + s.grossAmount, 0);
-        return { content: json({ sale_date: sale_date ?? null, settlements, total_gross_amount: Math.round(total * 100) / 100 }) };
+        // Written in code: with only dates and statuses, the 8B still said "all deposited today".
+        const summary = settlements.map((s) => `${s.method} ${s.grossAmount.toFixed(2)}: ${s.status === 'paid' ? 'already deposited on' : 'to be deposited on'} ${s.expectedDay}`);
+        return { content: json({ sale_date: sale_date ?? null, summary, settlements, total_gross_amount: Math.round(total * 100) / 100 }) };
       },
     ),
 

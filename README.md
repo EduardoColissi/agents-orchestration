@@ -100,7 +100,7 @@ npm run ingest             # optional: rebuild data/index.json from the web
 ### Tests and evaluation
 
 ```bash
-npm test                   # 161 tests, offline, scripted fake LLM, SQLite in memory (Node >= 24)
+npm test                   # 162 tests, offline, scripted fake LLM, SQLite in memory (Node >= 24)
 npm run typecheck
 npm run eval -- --runs 3   # semantic evaluation of the running API (EVAL_BASE_URL, default localhost:3000)
 npm run eval -- --runs 1 --only 3,5,MT1,R1,H2   # a few cases (partial runs skip the baseline gate)

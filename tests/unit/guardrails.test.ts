@@ -3,7 +3,7 @@ import { checkInput } from '../../src/guardrails/input.js';
 import { luhnValid, maskPII } from '../../src/guardrails/pii.js';
 import { detectLanguage } from '../../src/guardrails/language.js';
 import { normalizePlan } from '../../src/agents/router.js';
-import { normalizeLanguage, withoutTicketTalk } from '../../src/orchestrator.js';
+import { composeAnswer, normalizeLanguage, withoutTicketTalk } from '../../src/orchestrator.js';
 
 describe('maskPII', () => {
   it('masks Luhn-valid card numbers, CPF, CNPJ and e-mails', () => {
@@ -87,5 +87,12 @@ describe('composed answers', () => {
     const en = 'Your machine GS-1988-0001 is offline.\n\nNext step: restart it. If it persists, I can open a support ticket for you.';
     expect(withoutTicketTalk(en, false)).toBe('Your machine GS-1988-0001 is offline.\n\nNext step: restart it.');
     expect(withoutTicketTalk('Opened ticket TCK-1A2B3C4D5E6F.', true)).toBe('Opened ticket TCK-1A2B3C4D5E6F.');
+  });
+
+  it('joins the facts and the guidance without the paragraphs that only repeat the facts', () => {
+    const facts = 'Your card machine GS-1988-0001 is offline. The battery is at 64%.';
+    const guidance = 'The card machine GS-1988-0001 is offline and the battery is at 64%.\n\nFollow these steps:\n1. Restart it.\n2. Switch to the 4G chip.';
+    expect(composeAnswer(facts, guidance)).toBe('Your card machine GS-1988-0001 is offline. The battery is at 64%.\n\nFollow these steps:\n1. Restart it.\n2. Switch to the 4G chip.');
+    expect(composeAnswer('', 'Only guidance.')).toBe('Only guidance.');
   });
 });
