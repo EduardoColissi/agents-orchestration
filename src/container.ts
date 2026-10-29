@@ -99,6 +99,7 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
       }),
       support: new SupportAgent(llm, repo, {
         model: model('agent', config.AGENT_MODEL),
+        provider: opts.llm ? 'injected' : config.LLM_PROVIDER,
         maxIterations: config.AGENT_MAX_ITERATIONS,
         ...(opts.now ? { now: opts.now } : {}),
       }),
@@ -112,7 +113,9 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
   const conversations = new ConversationStore(db, now);
   const handoffs = new HandoffStore(db, now);
   const chat = new ChatService({ db, orchestrator, conversations, handoffs, audit, handoffTtlMinutes: config.HANDOFF_TTL_MINUTES });
-  const hitl = new HitlService({ db, handoffs, conversations, audit, logger });
+  const support = orchestrator.agents.support as SupportAgent;
+  support.useAudit(audit);
+  const hitl = new HitlService({ db, handoffs, conversations, audit, logger, approvals: support });
 
   return { config, orchestrator, logger, knowledgeBaseSize: store.size, db, audit, jwt, credentials, conversations, chat, handoffs, hitl, now };
 }

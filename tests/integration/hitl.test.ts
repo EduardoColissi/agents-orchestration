@@ -100,3 +100,87 @@ describe('HITL assist: interrupt → queue → operator → resume (FR17, FR19�
     expect(t.deps.audit.list({ action: 'conversation.trace_read' })).toHaveLength(1);
   });
 });
+
+describe('HITL approval: gated action → checkpoint → operator → resume (FR18–FR20)', () => {
+  const replacementScript = (afterDecision: string) =>
+    scriptedLLM({
+      router: [route({ route: 'support', language: 'pt' })],
+      support: [
+        { toolCalls: [{ name: 'get_terminal_status', input: {} }] },
+        { toolCalls: [{ name: 'request_terminal_replacement', input: { serial: 'GS-1988-0001', reason: 'offline for days' } }] },
+        { text: afterDecision },
+      ],
+    });
+  const requestReplacement = async (t: TestApp) => {
+    const body = await chat(t, 'Minha Get Smart GS-1988-0001 está offline faz dias, quero trocar por uma nova');
+    return { body, conversationId: body.conversation_id as string, handoffId: body.handoff.handoff_id as string };
+  };
+
+  it('stops before the gated tool: an approval handoff, and no ticket yet', async () => {
+    const t = await buildTestApp(replacementScript('unused'));
+    const { body, handoffId } = await requestReplacement(t);
+    expect(body.handoff).toMatchObject({ required: true, reason: 'approval_required', kind: 'approval', status: 'pending' });
+    expect(body.answer).toContain('GS-1988-0001');
+    expect(body.answer).toContain(handoffId);
+    expect(t.repo.listTickets()).toHaveLength(0);
+    const queued = (await asOperator(t, 'GET', `/operator/handoffs/${handoffId}`)).json();
+    expect(queued.request.proposed_action).toEqual({ tool: 'request_terminal_replacement', input: { serial: 'GS-1988-0001', reason: 'offline for days' } });
+  });
+
+  it('approve: the action runs once and the agent continues from the checkpoint', async () => {
+    const t = await buildTestApp(replacementScript('Pronto! A troca foi aprovada e a nova maquininha será enviada.'));
+    const { conversationId, handoffId } = await requestReplacement(t);
+    const res = await asOperator(t, 'POST', `/operator/handoffs/${handoffId}/resolve`, { action: 'approve', message: 'Troca aprovada.', expected_version: 1 });
+    expect(res.statusCode).toBe(200);
+
+    const tickets = t.repo.listTickets('cliente1988');
+    expect(tickets).toMatchObject([{ category: 'terminal_replacement' }]);
+    const final = t.deps.conversations.messages(conversationId).at(-1)!;
+    expect(final).toMatchObject({ role: 'assistant', handoffId });
+    expect(final.content).toContain('Pronto! A troca foi aprovada');
+    expect(final.content).toContain(tickets[0]!.id);
+
+    // Resumed from the checkpoint: the earlier tool call is replayed as history, not executed again.
+    const resumeCall = t.llm.calls.filter((c) => kindOf(c) === 'support').at(-1)!;
+    expect(resumeCall.messages).toHaveLength(5);
+    expect(JSON.stringify(resumeCall.messages.at(-1))).toContain('approved_by_operator');
+    expect(resumeCall.tools!.map((x) => x.name)).not.toContain('request_terminal_replacement');
+    expect(t.deps.audit.list({ action: 'approval.executed' })).toHaveLength(1);
+
+    // Exactly once: a second resolve is refused and a repeated delivery changes nothing.
+    expect((await asOperator(t, 'POST', `/operator/handoffs/${handoffId}/resolve`, { action: 'approve', expected_version: 2 })).statusCode).toBe(409);
+    await t.deps.hitl.deliver(t.deps.handoffs.get(handoffId)!);
+    expect(t.repo.listTickets()).toHaveLength(1);
+    expect(t.deps.conversations.messages(conversationId).filter((m) => m.handoffId === handoffId)).toHaveLength(1);
+  });
+
+  it('reject: nothing is executed and the agent explains the refusal', async () => {
+    const t = await buildTestApp(replacementScript('Entendi: a troca não foi aprovada porque a máquina voltou a se comunicar.'));
+    const { conversationId, handoffId } = await requestReplacement(t);
+    await asOperator(t, 'POST', `/operator/handoffs/${handoffId}/resolve`, { action: 'reject', message: 'A máquina voltou a se comunicar.', expected_version: 1 });
+    expect(t.repo.listTickets()).toHaveLength(0);
+    expect(JSON.stringify(t.llm.calls.at(-1)!.messages.at(-1))).toContain('rejected_by_operator: A máquina voltou a se comunicar.');
+    expect(t.deps.conversations.messages(conversationId).at(-1)!.content).toContain('não foi aprovada');
+  });
+
+  it('a checkpoint from another provider/model is not replayed: deterministic answer, action still once', async () => {
+    const t = await buildTestApp(replacementScript('unused'));
+    const { conversationId, handoffId } = await requestReplacement(t);
+    t.deps.db.prepare("UPDATE handoffs SET checkpoint = json_set(checkpoint, '$.provider', 'anthropic') WHERE id = ?").run(handoffId);
+    const callsBefore = t.llm.calls.length;
+    await asOperator(t, 'POST', `/operator/handoffs/${handoffId}/resolve`, { action: 'approve', expected_version: 1 });
+    expect(t.llm.calls.length).toBe(callsBefore);
+    const ticket = t.repo.listTickets()[0]!;
+    expect(t.deps.conversations.messages(conversationId).at(-1)!.content).toContain(ticket.id);
+  });
+
+  it('an expired approval never executes', async () => {
+    let now = new Date('2026-10-23T15:00:00Z');
+    const t = await buildTestApp(replacementScript('unused'), { now: () => now });
+    const { handoffId } = await requestReplacement(t);
+    now = new Date(now.getTime() + 241 * 60_000);
+    t.deps.hitl.sweep();
+    expect((await asOperator(t, 'POST', `/operator/handoffs/${handoffId}/resolve`, { action: 'approve', expected_version: 2 })).statusCode).toBe(409);
+    expect(t.repo.listTickets()).toHaveLength(0);
+  });
+});

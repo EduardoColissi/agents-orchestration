@@ -42,10 +42,11 @@ describe('MockCustomerRepository', () => {
 });
 
 describe('support tools', () => {
-  it('exposes the five tools required by the spec (FR5)', () => {
+  it('exposes the support tools, with the replacement gated behind approval (FR4, FR18)', () => {
     expect(Object.keys(toolMap(repo(), 'cliente1988')).sort()).toEqual(
-      ['create_support_ticket', 'get_customer_profile', 'get_settlements', 'get_terminal_status', 'get_transactions'],
+      ['create_support_ticket', 'get_customer_profile', 'get_settlements', 'get_terminal_status', 'get_transactions', 'request_terminal_replacement'],
     );
+    expect(Object.values(toolMap(repo(), 'cliente1988')).filter((t) => t.requiresApproval).map((t) => t.spec.name)).toEqual(['request_terminal_replacement']);
   });
 
   it('enriches declined transactions with code meaning and action', async () => {

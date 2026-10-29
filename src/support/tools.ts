@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { defineTool, json } from '../agents/defineTool.js';
 import type { AgentTool } from '../agents/toolLoop.js';
@@ -75,6 +76,24 @@ export function createSupportTools(repo: CustomerRepository, userId: string): Ag
         const ticket = await repo.createTicket({ userId, category, summary });
         return { content: json({ ticket_id: ticket.id, status: ticket.status }) };
       },
+    ),
+
+    defineTool(
+      'request_terminal_replacement',
+      "Request a replacement card machine for one of the merchant's terminals. Use ONLY when the merchant asks to replace/exchange the machine. A human specialist must approve it before it happens: never tell the merchant it was approved.",
+      z.object({
+        serial: z.string().min(3).max(40).describe('Serial of the merchant terminal to replace (from get_terminal_status)'),
+        reason: z.string().min(5).max(300).describe('Why it should be replaced, based on the diagnostics'),
+      }),
+      async ({ serial, reason }, { idempotencyKey }) => {
+        const terminals = await repo.getTerminals(userId);
+        if (!terminals.some((t) => t.serial === serial)) return { content: json({ error: 'terminal_not_found', serial }), isError: true };
+        // The approval (handoff) id makes the side effect idempotent: approved twice, created once.
+        const id = idempotencyKey ? `TCK-${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 8).toUpperCase()}` : undefined;
+        const ticket = await repo.createTicket({ ...(id ? { id } : {}), userId, category: 'terminal_replacement', summary: `Replace ${serial}: ${reason}` });
+        return { content: json({ ticket_id: ticket.id, status: ticket.status, serial }) };
+      },
+      { requiresApproval: true },
     ),
   ];
 }

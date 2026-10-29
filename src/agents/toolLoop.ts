@@ -28,6 +28,8 @@ export interface ToolLoopParams {
   model: string;
   system: string;
   userMessage: string;
+  /** Resume from a checkpoint instead of starting from `userMessage`. */
+  initialMessages?: LLMMessage[];
   tools: AgentTool[];
   webSearch?: { maxUses: number };
   maxIterations: number;
@@ -42,6 +44,16 @@ export interface ToolLoopResult {
   iterations: number;
   hitIterationLimit: boolean;
   evidence: ToolEvidence[];
+  /** Set when the model called an approval-gated tool: the loop stopped before running it. */
+  interrupt?: ToolLoopInterrupt;
+}
+
+export interface ToolLoopInterrupt {
+  pendingCall: { id: string; name: string; input: unknown };
+  /** Results of the non-gated calls of the same turn, to send back together on resume. */
+  siblingResults: ToolResultContent[];
+  /** Conversation with the model up to (and including) the gated call. JSON-serializable. */
+  messages: LLMMessage[];
 }
 
 const EVIDENCE_MAX_CHARS = 4000;
@@ -53,7 +65,7 @@ const EVIDENCE_MAX_CHARS = 4000;
  */
 export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResult> {
   const byName = new Map(params.tools.map((t) => [t.spec.name, t]));
-  const messages: LLMMessage[] = [{ role: 'user', content: params.userMessage }];
+  const messages: LLMMessage[] = params.initialMessages ? [...params.initialMessages] : [{ role: 'user', content: params.userMessage }];
   const toolsUsed: string[] = [];
   const sources: Source[] = [];
   const evidence: ToolEvidence[] = [];
@@ -85,7 +97,9 @@ export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResul
 
     messages.push({ role: 'assistant', content: response.assistantContent });
     const results: ToolResultContent[] = [];
+    const gated = response.toolCalls.find((c) => byName.get(c.name)?.requiresApproval);
     for (const call of response.toolCalls) {
+      if (call === gated) continue;
       toolsUsed.push(call.name);
       const tool = byName.get(call.name);
       let result: ToolResultContent;
@@ -102,6 +116,11 @@ export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResul
       }
       results.push(result);
       evidence.push({ name: call.name, input: call.input, output: maskPII(result.content).text.slice(0, EVIDENCE_MAX_CHARS), isError: result.is_error === true });
+    }
+    if (gated) {
+      toolsUsed.push(gated.name);
+      const interrupt = { pendingCall: { id: gated.id, name: gated.name, input: gated.input }, siblingResults: results, messages };
+      return { text: '', toolsUsed: unique(toolsUsed), sources: dedupeSources(sources), usage, iterations: iteration, hitIterationLimit: false, evidence, interrupt };
     }
     messages.push({ role: 'user', content: results });
   }

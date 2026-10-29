@@ -81,6 +81,12 @@ export interface OrchestratorDeps {
   confidenceThreshold: number;
 }
 
+const APPROVAL_REQUESTED: Record<string, (serial: string, id: string) => string> = {
+  pt: (s, id) => `Pedi a aprovação de um especialista para a troca da maquininha ${s} (protocolo ${id}). Você recebe a resposta aqui nesta conversa.`,
+  es: (s, id) => `Pedí la aprobación de un especialista para el cambio de la terminal ${s} (protocolo ${id}). Recibirás la respuesta aquí, en esta conversación.`,
+  en: (s, id) => `I asked a specialist to approve the replacement of card machine ${s} (ticket ${id}). You'll get the answer here, in this conversation.`,
+};
+
 const UNGROUNDED_NOTE: Record<string, string> = {
   pt: '\n\n_Não encontrei fontes oficiais que confirmem esta resposta; confirme com a central Getnet._',
   es: '\n\n_No encontré fuentes oficiales que confirmen esta respuesta; confírmalo con la central de Getnet._',
@@ -94,6 +100,10 @@ const UNGROUNDED_NOTE: Record<string, string> = {
  */
 export class Orchestrator {
   constructor(private readonly deps: OrchestratorDeps) {}
+
+  get agents(): OrchestratorDeps['agents'] {
+    return this.deps.agents;
+  }
 
   async handle(request: ChatRequest): Promise<OrchestratorTurn> {
     const turn: TurnState = { message: request.message, decision: null, standaloneQuery: null, results: [], openHandoff: request.openHandoff ?? null, handoffRequest: null };
@@ -196,6 +206,8 @@ export class Orchestrator {
           { stage: 'agent', agent: step, latency_ms: run.ms, tools: run.value.toolsUsed, sources: run.value.sources.length, tokens: run.value.usage, handoff: run.value.handoff?.reason },
           'agent finished',
         );
+        // FR18: the agent proposed an approval-gated action → interrupt and queue it for an operator.
+        if (run.value.approval) return this.requestApproval(turn, log, started, traceId, usage, executed, results, language, run.value.approval);
         // An agent that cannot continue (e.g. unknown customer) stops the plan.
         if (run.value.handoff && run.value.handoff.reason !== 'support_ticket_opened') break;
       } catch (err) {
@@ -256,6 +268,24 @@ export class Orchestrator {
     log.info({ stage: 'agent', agent: 'escalation', reason: p.reason, handoff_id: handoff.handoff_id }, 'escalated to human');
     return this.finish(turn, log, started, traceId, usage, {
       answer: result.answer, route: 'escalation', agents: executed, results: [...p.results, result], handoff, language: p.language,
+    });
+  }
+
+  private async requestApproval(
+    turn: TurnState, log: Logger, started: number, traceId: string, usage: TokenUsage, executed: AgentName[], results: AgentResult[], language: string,
+    approval: NonNullable<AgentResult['approval']>,
+  ): Promise<ChatResponse> {
+    const open = turn.openHandoff;
+    const id = open?.id ?? newHandoffId();
+    if (!open) turn.handoffRequest = { id, kind: 'approval', reason: 'approval_required', language, checkpoint: approval.checkpoint, proposedAction: approval.proposedAction };
+    const serial = String((approval.proposedAction.input as { serial?: unknown } | null)?.serial ?? '');
+    const answer = open
+      ? this.deps.escalation.handoff({ language, reason: 'approval_required', handoffId: id, alreadyOpen: true }).answer
+      : (APPROVAL_REQUESTED[language] ?? APPROVAL_REQUESTED.en!)(serial, id);
+    log.info({ stage: 'hitl', handoff_id: id, kind: 'approval', proposed_action: approval.proposedAction.tool }, 'approval requested');
+    return this.finish(turn, log, started, traceId, usage, {
+      answer, route: 'support', agents: executed, results, language,
+      handoff: { required: true, reason: 'approval_required', ticket_id: null, handoff_id: id, kind: open?.kind ?? 'approval', status: open?.status ?? 'pending' },
     });
   }
 

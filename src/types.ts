@@ -65,6 +65,8 @@ export interface AgentResult {
   handoff?: HandoffRequest;
   /** Tool calls executed by this agent, with their (masked) outputs. */
   evidence?: ToolEvidence[];
+  /** Support agent: the run stopped before an approval-gated tool (HITL checkpoint). */
+  approval?: { checkpoint: unknown; proposedAction: { tool: string; input: unknown } };
   /** Knowledge agent: true when it explicitly said the information was not found. */
   notFound?: boolean;
 }
