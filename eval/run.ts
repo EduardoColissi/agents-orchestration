@@ -108,14 +108,15 @@ async function runCase(c: GoldenCase, run: number): Promise<RunRecord> {
   const checks = expectChecks(c.expect, last!);
   let answer = last!.answer;
 
-  const trace = await api.as<TraceBody>(OPERATOR, 'GET', `/operator/conversations/${conversationId}`);
-  const evidence = trace.body.messages.filter((m) => m.role === 'assistant' && m.evidence).at(-1)?.evidence ?? null;
+  const lastEvidence = async () => (await api.as<TraceBody>(OPERATOR, 'GET', `/operator/conversations/${conversationId}`)).body.messages.filter((m) => m.role === 'assistant' && m.evidence).at(-1)?.evidence ?? null;
+  let evidence = await lastEvidence();
   if (c.expect.standalone_contains_any) {
     const q = (evidence?.standalone_query ?? '').toLowerCase();
     checks.push({ name: 'standalone_query', pass: (c.expect.standalone_contains_any as string[]).some((k) => q.includes(k.toLowerCase())) });
   }
 
   let decision = '';
+  let humanAuthored = false;
   if (c.operator) {
     const handoffId = last!.handoff.handoff_id;
     checks.push({ name: 'handoff_queued', pass: !!handoffId });
@@ -130,11 +131,14 @@ async function runCase(c: GoldenCase, run: number): Promise<RunRecord> {
       if (after.answer_contains_any) checks.push({ name: 'outcome_content', pass: after.answer_contains_any.some((k) => final.content.includes(k)) });
       if (after.answer_not_contains) checks.push({ name: 'outcome_content', pass: !after.answer_not_contains.some((k) => final.content.includes(k)) });
       answer = final.content;
+      humanAuthored = final.role === 'operator';
+      // The outcome of an approval is a resumed agent run with its own evidence.
+      if (!humanAuthored) evidence = (await lastEvidence()) ?? evidence;
       decision = `\n\nOperator decision: ${c.operator.action}${c.operator.message ? ` — "${c.operator.message}"` : ''}`;
     }
   }
   checks.push({ name: 'no_cross_merchant_data', pass: !crossMerchantLeak(answer, c.user) });
-  return { ...base, answer, evidence: evidenceText(evidence) + decision, checks, latencyMs, route: last!.route, standaloneQuery: evidence?.standalone_query ?? null };
+  return { ...base, answer, evidence: evidenceText(evidence) + decision, checks, latencyMs, route: last!.route, standaloneQuery: evidence?.standalone_query ?? null, ...(humanAuthored ? { humanAuthored } : {}) };
 }
 
 function judgeClient(): LLMClient {
@@ -152,7 +156,7 @@ async function rejudge(path: string) {
   if (generatorFamilies.has(familyOf(JUDGE_MODEL))) throw new Error(`judge ${JUDGE_MODEL} is from the generator's family`);
   const judge = new Judge(judgeClient(), JUDGE_MODEL);
   const records = report.records.map((r) => ({ ...r, scores: undefined, judgeError: undefined }) as RunRecord);
-  for (const r of records.filter((x) => x.answer && !x.error)) {
+  for (const r of records.filter((x) => x.answer && !x.error && !x.humanAuthored)) {
     try {
       r.scores = await judge.score({ merchant: r.user, turns: r.turns, answer: r.answer, evidence: r.evidence, referenceFacts: r.referenceFacts });
     } catch (err) {
@@ -238,7 +242,7 @@ async function main() {
       await fetch(`${JUDGE_OLLAMA_URL}/api/pull`, { method: 'POST', body: JSON.stringify({ model: JUDGE_MODEL, stream: false }) });
     }
     const judge = new Judge(judgeClient(), JUDGE_MODEL);
-    for (const r of records.filter((x) => x.answer && !x.error)) {
+    for (const r of records.filter((x) => x.answer && !x.error && !x.humanAuthored)) {
       try {
         r.scores = await judge.score({ merchant: r.user, turns: r.turns, answer: r.answer, evidence: r.evidence, referenceFacts: r.referenceFacts });
       } catch (err) {

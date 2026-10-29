@@ -1,4 +1,5 @@
 import type { Principal } from '../auth/jwt.js';
+import type { ToolEvidence } from '../types.js';
 import { maskPII } from '../guardrails/pii.js';
 import type { Logger } from '../observability/logger.js';
 import type { AuditLog } from '../store/audit.js';
@@ -19,7 +20,7 @@ export class HandoffConflictError extends Error {
 
 /** Runs an approved/rejected action and lets the agent finish from its checkpoint (FR19). */
 export interface ApprovalResumer {
-  resume(handoff: Handoff, decision: { approved: boolean; note?: string }): Promise<string>;
+  resume(handoff: Handoff, decision: { approved: boolean; note?: string }): Promise<{ content: string; evidence: ToolEvidence[] }>;
 }
 
 export interface HitlServiceDeps {
@@ -131,20 +132,21 @@ export class HitlService {
 
   private async deliverOnce(handoff: Handoff): Promise<{ role: MessageRole; content: string }> {
     const resolution = handoff.resolution!;
-    let outcome: { role: MessageRole; content: string };
+    let outcome: { role: MessageRole; content: string; evidence?: unknown };
     if (handoff.kind === 'assist' && resolution.action === 'reply') {
       outcome = { role: 'operator', content: maskPII(resolution.message!).text };
     } else if (handoff.kind === 'approval' && this.deps.approvals) {
-      const content = await this.deps.approvals.resume(handoff, { approved: resolution.action === 'approve', ...(resolution.message ? { note: resolution.message } : {}) });
-      outcome = { role: 'assistant', content: maskPII(content).text };
+      const resumed = await this.deps.approvals.resume(handoff, { approved: resolution.action === 'approve', ...(resolution.message ? { note: resolution.message } : {}) });
+      // The resumed run's tool calls are kept as evidence, like any other turn (operators and the judge read them).
+      outcome = { role: 'assistant', content: maskPII(resumed.content).text, evidence: { route_decision: null, standalone_query: null, resumed_from: handoff.id, steps: [{ agent: 'support', tools: resumed.evidence }], sources: [] } };
     } else {
       outcome = { role: 'assistant', content: pick(REJECTED, handoff) };
     }
     transaction(this.deps.db, () => {
-      this.deps.conversations.addMessage({ conversationId: handoff.conversationId, role: outcome.role, content: outcome.content, handoffId: handoff.id });
+      this.deps.conversations.addMessage({ conversationId: handoff.conversationId, role: outcome.role, content: outcome.content, handoffId: handoff.id, ...(outcome.evidence ? { evidence: outcome.evidence } : {}) });
       if (this.deps.handoffs.complete(handoff.id)) this.deps.audit.write({ actor: 'system', action: 'handoff.completed', subject: handoff.id });
     });
-    return outcome;
+    return { role: outcome.role, content: outcome.content };
   }
 
   /** Pending past the TTL → expired, with a message to the merchant. An expired approval never runs. */

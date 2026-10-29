@@ -160,7 +160,7 @@ describe('HITL approval: gated action → checkpoint → operator → resume (FR
     const { conversationId, handoffId } = await requestReplacement(t);
     await asOperator(t, 'POST', `/operator/handoffs/${handoffId}/resolve`, { action: 'reject', message: 'A máquina voltou a se comunicar.', expected_version: 1 });
     expect(t.repo.listTickets()).toHaveLength(0);
-    expect(JSON.stringify(t.llm.calls.at(-1)!.messages.at(-1))).toContain('rejected_by_operator: A máquina voltou a se comunicar.');
+    expect(JSON.stringify(t.llm.calls.at(-1)!.messages.at(-1))).toContain('Reason: A máquina voltou a se comunicar.');
     expect(t.deps.conversations.messages(conversationId).at(-1)!.content).toContain('não foi aprovada');
   });
 
@@ -311,6 +311,33 @@ describe('slow resumes', () => {
     expect((await resolving).statusCode).toBe(200);
     expect(t.deps.audit.list({ action: 'approval.executed' })).toHaveLength(1);
     expect(t.repo.listTickets()).toHaveLength(1);
+  });
+});
+
+describe('approval outcome', () => {
+  const approve = async (resumedText: string) => {
+    const llm = scriptedLLM({
+      router: [route({ route: 'support', language: 'pt' })],
+      support: [{ toolCalls: [{ name: 'request_terminal_replacement', input: { serial: 'GS-1988-0001', reason: 'offline for days' } }] }, { text: resumedText }],
+    });
+    const t = await buildTestApp(llm);
+    const body = await chat(t, 'Quero trocar minha maquininha GS-1988-0001 por uma nova');
+    await asOperator(t, 'POST', `/operator/handoffs/${body.handoff.handoff_id}/resolve`, { action: 'approve', expected_version: 1 });
+    const trace = (await asOperator(t, 'GET', `/operator/conversations/${body.conversation_id}`)).json();
+    return { t, final: trace.messages.at(-1), ticket: t.repo.listTickets()[0]! };
+  };
+
+  it('a resumed answer that contradicts the approval is replaced by the decision and the ticket', async () => {
+    const { final, ticket } = await approve('Seu pedido de troca será analisado e aprovado pela nossa equipe em breve.');
+    expect(final.content).toContain('aprovada');
+    expect(final.content).toContain(ticket.id);
+    expect(final.content).not.toContain('será analisado');
+  });
+
+  it('the resumed run is stored as evidence of the outcome message', async () => {
+    const { final } = await approve('Troca aprovada! Já abrimos o chamado.');
+    expect(final.evidence).toMatchObject({ resumed_from: expect.stringMatching(/^HND-/), steps: [{ agent: 'support', tools: [{ name: 'request_terminal_replacement', isError: false }] }] });
+    expect(final.evidence.steps[0].tools[0].output).toContain('approved_by_operator');
   });
 });
 });

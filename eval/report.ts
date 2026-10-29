@@ -19,6 +19,8 @@ export interface RunRecord {
   route?: string;
   standaloneQuery?: string | null;
   error?: string;
+  /** The final answer was written by a person (operator reply): checked, but not judged as the system's output. */
+  humanAuthored?: boolean;
   scores?: Scores;
   judgeError?: string;
 }

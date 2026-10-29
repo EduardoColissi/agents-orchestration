@@ -1,5 +1,5 @@
 import type { LLMClient, LLMMessage, ToolResultContent } from '../llm/client.js';
-import type { Agent, AgentContext, AgentResult } from '../types.js';
+import type { Agent, AgentContext, AgentResult, ToolEvidence } from '../types.js';
 import { emptyUsage } from '../types.js';
 import type { CustomerRepository } from '../support/repository.js';
 import { createSupportTools, findTerminal } from '../support/tools.js';
@@ -52,6 +52,9 @@ const APPROVED_FALLBACK: Record<string, (ticket: string) => string> = {
   es: (t) => `Un especialista aprobó el cambio de tu terminal. Abrimos el ticket ${t} para el envío de la nueva máquina.`,
   en: (t) => `A specialist approved the replacement of your card machine. We opened ticket ${t} to ship the new one.`,
 };
+
+/** Wording that would contradict an approval that already happened. */
+const STILL_PENDING = /(aguard|pendente|pending|ser[áa] (analisad|avaliad|aprovad|verificad)|ir[áa] (verificar|aprovar|analisar|confirmar)|will (review|verify|approve|confirm)|wait for (approval|confirmation)|once (it is )?approved)/i;
 
 const NOT_OWNED: Record<string, (serial: string) => string> = {
   pt: (s) => `Não encontrei a maquininha ${s} na sua conta, então não abri o pedido de troca. Confira o número de série no aplicativo Getnet e me diga de novo.`,
@@ -182,7 +185,7 @@ export class SupportAgent implements Agent, ApprovalResumer {
    * continue the SAME agent run from the checkpoint with the tool result — the earlier tool calls
    * are not repeated. Tools are bound to the conversation owner, never to the operator.
    */
-  async resume(handoff: Handoff, decision: { approved: boolean; note?: string }): Promise<string> {
+  async resume(handoff: Handoff, decision: { approved: boolean; note?: string }): Promise<{ content: string; evidence: ToolEvidence[] }> {
     const checkpoint = handoff.checkpoint as ApprovalCheckpoint;
     const tools = createSupportTools(this.repo, handoff.ownerId);
     const language = checkpoint.language;
@@ -195,10 +198,14 @@ export class SupportAgent implements Agent, ApprovalResumer {
       const out = await tool.execute(checkpoint.pendingCall.input, { idempotencyKey: handoff.id });
       if (!out.isError) ticketId = (JSON.parse(out.content) as { ticket_id: string }).ticket_id;
       this.audit?.write({ actor: 'system', action: 'approval.executed', subject: handoff.id, details: { tool: checkpoint.pendingCall.name, ticket_id: ticketId || null, error: out.isError ?? false } });
-      gatedResult = { type: 'tool_result', tool_use_id: checkpoint.pendingCall.id, content: `approved_by_operator${note ? ` (${note})` : ''}: ${out.content}`, ...(out.isError ? { is_error: true } : {}) };
+      const outcome = out.isError
+        ? 'the operator APPROVED it, but running it failed; apologize and say a specialist will finish it with the protocol'
+        : 'the operator APPROVED it and it is DONE (not pending): tell the merchant it was approved and quote the ticket id';
+      gatedResult = { type: 'tool_result', tool_use_id: checkpoint.pendingCall.id, content: `approved_by_operator — ${outcome}${note ? `. Operator note: ${note}` : ''}. Result: ${out.content}`, ...(out.isError ? { is_error: true } : {}) };
     } else {
-      gatedResult = { type: 'tool_result', tool_use_id: checkpoint.pendingCall.id, content: `rejected_by_operator: ${note || 'no reason given'}`, is_error: true };
+      gatedResult = { type: 'tool_result', tool_use_id: checkpoint.pendingCall.id, content: `rejected_by_operator — the operator did NOT approve it; tell the merchant it was not approved and why. Reason: ${note || 'no reason given'}`, is_error: true };
     }
+    const evidence: ToolEvidence[] = [{ name: checkpoint.pendingCall.name, input: checkpoint.pendingCall.input, output: gatedResult.content, isError: gatedResult.is_error === true }];
 
     const fallback = !decision.approved
       ? (REJECTED_FALLBACK[language] ?? REJECTED_FALLBACK.en!)(note)
@@ -206,9 +213,9 @@ export class SupportAgent implements Agent, ApprovalResumer {
         ? (APPROVED_FALLBACK[language] ?? APPROVED_FALLBACK.en!)(ticketId)
         : (APPROVED_BUT_FAILED[language] ?? APPROVED_BUT_FAILED.en!)(handoff.id);
     // A checkpoint is only valid for the provider and model that produced it.
-    if (checkpoint.provider !== (this.options.provider ?? 'unknown') || checkpoint.model !== this.options.model) return fallback;
+    if (checkpoint.provider !== (this.options.provider ?? 'unknown') || checkpoint.model !== this.options.model) return { content: fallback, evidence };
     try {
-      let result = await runToolLoop({
+      const result = await runToolLoop({
         llm: this.llm,
         model: this.options.model,
         system: checkpoint.system,
@@ -218,14 +225,14 @@ export class SupportAgent implements Agent, ApprovalResumer {
         maxIterations: this.options.maxIterations,
         maxTokens: 1000,
       });
+      evidence.push(...result.evidence);
       const text = result.text.trim();
-      if (!text) return fallback;
-      // The protocol of the side effect is a fact the merchant must get, whatever the model wrote.
-      return decision.approved && ticketId && !text.includes(ticketId) ? `${text}
-
-${fallback}` : text;
+      // The decision and the protocol are facts the merchant must get exactly: a resumed answer that
+      // is empty or contradicts an approval ("it will be reviewed") is replaced by the template.
+      if (!text || (decision.approved && STILL_PENDING.test(text))) return { content: fallback, evidence };
+      return { content: decision.approved && ticketId && !text.includes(ticketId) ? `${fallback}\n\n${text}` : text, evidence };
     } catch {
-      return fallback;
+      return { content: fallback, evidence };
     }
   }
 }
