@@ -147,7 +147,7 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     expect(llm.calls.some((c) => kindOf(c) === 'support')).toBe(false);
   });
 
-  it('does not open a second ticket when support already opened one and knowledge hands off', async () => {
+  it('support opened a ticket and knowledge found nothing: one ticket, the support answer, no extra handoff', async () => {
     const llm = scriptedLLM({
       router: [route({ route: 'support', plan: ['support', 'knowledge'] })],
       support: [{ toolCalls: [{ name: 'create_support_ticket', input: { category: 'connectivity', summary: 'Machine offline for 2 days' } }] }, { text: 'Opened a ticket.' }],
@@ -157,7 +157,8 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     const body = (await post(app, "My machine won't turn on")).json();
     const tickets = repo.listTickets('cliente1988');
     expect(tickets).toHaveLength(1);
-    expect(body.handoff).toMatchObject({ required: true, reason: 'knowledge_gap', ticket_id: tickets[0]!.id });
+    expect(body.answer).toBe('Opened a ticket.');
+    expect(body.handoff).toMatchObject({ required: false, reason: 'support_ticket_opened', ticket_id: tickets[0]!.id });
   });
 
   it('normalises regional language codes from the Router (pt-BR → pt templates)', async () => {

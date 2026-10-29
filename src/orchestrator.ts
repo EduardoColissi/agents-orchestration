@@ -253,7 +253,17 @@ export class Orchestrator {
       }
     }
 
-    const final = results.at(-1)!;
+    // A "not found" from Knowledge does not erase what Support found in the account: when Support
+    // already answered, its answer is final, no knowledge-gap handoff is opened, and the pages
+    // Knowledge searched in vain are not cited as sources.
+    const last = results.at(-1)!;
+    const support = results.find((r) => r.agent === 'support' && r.answer.trim() && (!r.handoff || r.handoff.reason === 'support_ticket_opened'));
+    const supportStands = last.agent === 'knowledge' && last.notFound === true && support !== undefined;
+    if (supportStands) {
+      results[results.length - 1] = { ...last, sources: [] };
+      log.info({ stage: 'synthesis' }, 'knowledge found nothing; the support answer stands');
+    }
+    const final = supportStands ? support : last;
     const allSources = dedupeSources(results.flatMap((r) => r.sources));
 
     // 4. Output guardrail.

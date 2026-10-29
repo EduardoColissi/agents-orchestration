@@ -7,7 +7,7 @@ import { extractDocument } from '../../src/rag/crawler.js';
 import { HashingEmbedder } from '../../src/rag/embedder.js';
 import { InMemoryVectorStore } from '../../src/rag/vectorStore.js';
 import { Retriever, createKnowledgeBaseTool } from '../../src/rag/retriever.js';
-import { buildIndex, loadLocalDocuments } from '../../src/rag/ingest.js';
+import { buildIndex, embedChunks, loadLocalDocuments, replaceLocalChunks } from '../../src/rag/ingest.js';
 
 const html = `<!doctype html><html><head><title>Link de Pagamento | Getnet</title></head><body>
 <nav><a href="/pix/">Pix</a> Menu repetido</nav>
@@ -84,5 +84,21 @@ describe('retrieval', () => {
     const local = loadLocalDocuments('data/knowledge');
     expect(local[0]!.url).toBe('internal://knowledge/support-playbook.md');
     expect(local[0]!.title).toMatch(/playbook/i);
+  });
+
+  it('re-embeds the internal docs into an existing index without touching the crawled pages', async () => {
+    const embedder = new HashingEmbedder(512);
+    const web = await embedChunks([{ url: 'https://site.getnet.com.br/pix/', title: 'Pix', text: '## Pix\nReceba vendas por Pix na hora, com QR Code na maquininha, sem custo extra e com o dinheiro direto na sua conta.' }], embedder);
+    expect(web).toHaveLength(1);
+    const oldLocal = { ...web[0]!, id: 'old', url: 'internal://knowledge/support-playbook.md' };
+    const index = { embedder: embedder.id, sources: ['https://site.getnet.com.br/pix/', 'internal://knowledge/support-playbook.md'], chunks: [...web, oldLocal] };
+    const local = await embedChunks(loadLocalDocuments('data/knowledge'), embedder);
+
+    const merged = replaceLocalChunks(index, local, embedder.id);
+    expect(merged.chunks.filter((c) => c.url.startsWith('https://'))).toEqual(web);
+    expect(merged.chunks.some((c) => c.id === 'old')).toBe(false);
+    expect(merged.chunks.some((c) => /Maquininha offline ou sem internet/.test(c.text))).toBe(true);
+    expect(merged.sources).toEqual(['https://site.getnet.com.br/pix/', 'internal://knowledge/support-playbook.md']);
+    expect(() => replaceLocalChunks(index, local, 'another-embedder')).toThrow(/full ingest/);
   });
 });

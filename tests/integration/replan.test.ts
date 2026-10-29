@@ -21,6 +21,30 @@ describe('replanning: observe the specialist result, then decide (feedback gap 5
     expect(String(llm.calls.find((c) => kindOf(c) === 'knowledge')!.messages[0]!.content)).toContain('<account_findings agent="support">');
   });
 
+  it('a "not found" from Knowledge does not erase what Support found: no gap handoff, no unrelated sources', async () => {
+    const llm = scriptedLLM({
+      router: [route({ route: 'support', plan: ['support', 'knowledge'], language: 'pt' })],
+      support: [{ toolCalls: [{ name: 'get_terminal_status', input: {} }] }, { text: 'Sua Get Smart GS-1988-0001 está offline: o Wi-Fi está sem sinal e o chip 4G está ativo.' }],
+      knowledge: [{ toolCalls: [{ name: 'search_knowledge_base', input: { query: 'link de pagamento' } }] }, { text: 'Não encontrei essa informação no conteúdo oficial da Getnet. <<NOT_FOUND>>' }],
+    });
+    const t = await buildTestApp(llm);
+    const body = await chat(t.app, 'Minha maquininha está offline.');
+    expect(body.agents).toEqual(['router', 'support', 'knowledge']);
+    expect(body.answer).toBe('Sua Get Smart GS-1988-0001 está offline: o Wi-Fi está sem sinal e o chip 4G está ativo.');
+    expect(body.handoff.required).toBe(false);
+    expect(body.sources).toEqual([]);
+    expect(t.deps.handoffs.list()).toHaveLength(0);
+  });
+
+  it('a "not found" with nothing from Support still goes to a person', async () => {
+    const llm = scriptedLLM({
+      router: [route({ route: 'knowledge' })],
+      knowledge: [{ toolCalls: [{ name: 'search_knowledge_base', input: { query: 'crediário' } }] }, { text: "I couldn't find this in Getnet's official content. <<NOT_FOUND>>" }],
+    });
+    const body = await chat((await buildTestApp(llm)).app, 'Does Getnet offer insurance for my shop?');
+    expect(body.handoff).toMatchObject({ required: true, reason: 'knowledge_gap', kind: 'assist' });
+  });
+
   it('does not replan when the result needs nothing else', async () => {
     const llm = scriptedLLM({
       router: [route({ route: 'support' })],
