@@ -3,7 +3,7 @@ import { checkInput } from '../../src/guardrails/input.js';
 import { luhnValid, maskPII } from '../../src/guardrails/pii.js';
 import { detectLanguage } from '../../src/guardrails/language.js';
 import { normalizePlan } from '../../src/agents/router.js';
-import { normalizeLanguage } from '../../src/orchestrator.js';
+import { composeAnswer, normalizeLanguage, withoutTicketTalk } from '../../src/orchestrator.js';
 
 describe('maskPII', () => {
   it('masks Luhn-valid card numbers, CPF, CNPJ and e-mails', () => {
@@ -64,11 +64,11 @@ describe('detectLanguage', () => {
 
 describe('normalizePlan', () => {
   it('makes the plan start with the route and clears it for terminal routes', () => {
-    expect(normalizePlan({ route: 'support', plan: ['knowledge'], confidence: 1, language: 'en', reason: '' }).plan).toEqual(['support', 'knowledge']);
-    expect(normalizePlan({ route: 'knowledge', plan: [], confidence: 1, language: 'en', reason: '' }).plan).toEqual(['knowledge']);
-    expect(normalizePlan({ route: 'blocked', plan: ['support'], confidence: 1, language: 'en', reason: '' }).plan).toEqual([]);
+    expect(normalizePlan({ route: 'support', plan: ['knowledge'], confidence: 1, language: 'en', reason: '', standalone_query: '' }).plan).toEqual(['support', 'knowledge']);
+    expect(normalizePlan({ route: 'knowledge', plan: [], confidence: 1, language: 'en', reason: '', standalone_query: '' }).plan).toEqual(['knowledge']);
+    expect(normalizePlan({ route: 'blocked', plan: ['support'], confidence: 1, language: 'en', reason: '', standalone_query: '' }).plan).toEqual([]);
     // A two-step plan is always support → knowledge, whatever order the model used.
-    expect(normalizePlan({ route: 'knowledge', plan: ['support', 'knowledge'], confidence: 1, language: 'en', reason: '' })).toMatchObject({ route: 'support', plan: ['support', 'knowledge'] });
+    expect(normalizePlan({ route: 'knowledge', plan: ['support', 'knowledge'], confidence: 1, language: 'en', reason: '', standalone_query: '' })).toMatchObject({ route: 'support', plan: ['support', 'knowledge'] });
   });
 });
 
@@ -77,5 +77,22 @@ describe('normalizeLanguage', () => {
     expect(normalizeLanguage('pt-BR')).toBe('pt');
     expect(normalizeLanguage('EN')).toBe('en');
     expect(normalizeLanguage('portuguese')).toBeNull();
+  });
+});
+
+describe('composed answers', () => {
+  it('drops ticket promises and invented numbers from the account findings when no ticket was opened', () => {
+    const pt = 'Sua maquininha está offline desde 18h45. O Wi-Fi está sem sinal. Vou criar um ticket para a equipe verificar. O número do ticket é #2026-10-29-001.';
+    expect(withoutTicketTalk(pt, false)).toBe('Sua maquininha está offline desde 18h45. O Wi-Fi está sem sinal.');
+    const en = 'Your machine GS-1988-0001 is offline.\n\nNext step: restart it. If it persists, I can open a support ticket for you.';
+    expect(withoutTicketTalk(en, false)).toBe('Your machine GS-1988-0001 is offline.\n\nNext step: restart it.');
+    expect(withoutTicketTalk('Opened ticket TCK-1A2B3C4D5E6F.', true)).toBe('Opened ticket TCK-1A2B3C4D5E6F.');
+  });
+
+  it('joins the facts and the guidance without the paragraphs that only repeat the facts', () => {
+    const facts = 'Your card machine GS-1988-0001 is offline. The battery is at 64%.';
+    const guidance = 'The card machine GS-1988-0001 is offline and the battery is at 64%.\n\nFollow these steps:\n1. Restart it.\n2. Switch to the 4G chip.';
+    expect(composeAnswer(facts, guidance)).toBe('Your card machine GS-1988-0001 is offline. The battery is at 64%.\n\nFollow these steps:\n1. Restart it.\n2. Switch to the 4G chip.');
+    expect(composeAnswer('', 'Only guidance.')).toBe('Only guidance.');
   });
 });

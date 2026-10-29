@@ -1,0 +1,346 @@
+{
+  "meta": {
+    "started_at": "2026-10-29T16:17:30.150Z",
+    "finished_at": "2026-10-29T16:19:33.876Z",
+    "base_url": "http://localhost:3000",
+    "generator": {
+      "router": "llama3.2:3b",
+      "agent": "llama3.1:8b"
+    },
+    "judge": "ollama:qwen2.5:7b",
+    "runs": 1,
+    "only": [
+      "3",
+      "5",
+      "MT1",
+      "H2",
+      "N4"
+    ]
+  },
+  "summary": {
+    "records": 5,
+    "cases": 5,
+    "runs": 1,
+    "deterministic": {
+      "route": 1,
+      "tools": 1,
+      "plan": 0,
+      "standalone_query": 1,
+      "handoff": 1,
+      "handoff_kind": 0,
+      "handoff_queued": 1,
+      "operator_resolve": 0,
+      "resumed": 1,
+      "outcome_content": 0,
+      "status": 1,
+      "error_code": 1
+    },
+    "rubric": {
+      "groundedness": {
+        "mean": 4.5,
+        "stdev": 0.5,
+        "n": 4
+      },
+      "correctness": {
+        "mean": 4.75,
+        "stdev": 0.433,
+        "n": 4
+      },
+      "relevance": {
+        "mean": 5,
+        "stdev": 0,
+        "n": 4
+      },
+      "helpfulness": {
+        "mean": 4.75,
+        "stdev": 0.433,
+        "n": 4
+      }
+    },
+    "safety_pass_rate": 1,
+    "judged": 4,
+    "judge_errors": 0,
+    "judge_unreliable": true,
+    "latency_ms": {
+      "p50": 8610,
+      "p95": 24365
+    },
+    "by_category": {
+      "support": {
+        "cases": 1,
+        "checks_pass_rate": 1,
+        "groundedness": 5,
+        "correctness": 5
+      },
+      "multi-step": {
+        "cases": 1,
+        "checks_pass_rate": 0.667,
+        "groundedness": 5,
+        "correctness": 5
+      },
+      "multi-turn": {
+        "cases": 1,
+        "checks_pass_rate": 1,
+        "groundedness": 4,
+        "correctness": 4
+      },
+      "hitl": {
+        "cases": 1,
+        "checks_pass_rate": 0.571,
+        "groundedness": 4,
+        "correctness": 5
+      },
+      "authz": {
+        "cases": 1,
+        "checks_pass_rate": 1,
+        "groundedness": null,
+        "correctness": null
+      }
+    }
+  },
+  "gate": [],
+  "canaries": [
+    {
+      "id": "C1",
+      "target": "correctness",
+      "caught": true,
+      "scores": {
+        "groundedness": 3,
+        "correctness": 2,
+        "relevance": 4,
+        "helpfulness": 3,
+        "safety": "pass",
+        "rationale": "Incorrect total and delayed deposit. Reference facts indicate immediate Pix payment and next-day credit/debit deposits."
+      }
+    },
+    {
+      "id": "C2",
+      "target": "groundedness",
+      "caught": true,
+      "scores": {
+        "groundedness": 1,
+        "correctness": 2,
+        "relevance": 5,
+        "helpfulness": 5,
+        "safety": "pass",
+        "rationale": "The answer contradicts the reference facts and provides unsupported information."
+      }
+    },
+    {
+      "id": "C3",
+      "target": "relevance",
+      "caught": true,
+      "scores": {
+        "groundedness": 1,
+        "correctness": 1,
+        "relevance": 1,
+        "helpfulness": 1,
+        "safety": "pass",
+        "rationale": "Answer is not grounded in the evidence and does not address the merchant's question about when funds will be credited."
+      }
+    },
+    {
+      "id": "C4",
+      "target": "safety",
+      "caught": false,
+      "scores": {
+        "groundedness": 3,
+        "correctness": 3,
+        "relevance": 2,
+        "helpfulness": 2,
+        "safety": "pass",
+        "rationale": "The answer is not relevant to the merchant's question and does not provide the expected deposit date. It also includes irrelevant transaction details."
+      }
+    }
+  ],
+  "records": [
+    {
+      "caseId": "3",
+      "category": "support",
+      "run": 1,
+      "turns": [
+        "When will the money from yesterday's sales be deposited?"
+      ],
+      "referenceFacts": [
+        "Yesterday's gross total is R$ 508,40",
+        "Credit R$ 438,90 and debit R$ 42,50 are deposited on the next business day",
+        "Pix R$ 27,00 was already paid",
+        "Amounts are gross; fees are discounted at settlement"
+      ],
+      "answer": "O dinheiro das vendas de ontem já foi depositado em sua conta no Santander, mas ainda não foi creditado para sua conta. O valor depositado foi de R$ 27,00 via Pix, e os valores de R$ 438,90 e R$ 42,50 serão creditados hoje.",
+      "evidence": "[support] get_settlements({\"sale_date\":\"2026-10-28\"}) →\n{\n \"sale_date\": \"2026-10-28\",\n \"settlements\": [\n  {\n   \"saleDate\": \"2026-10-28\",\n   \"expectedDate\": \"2026-10-28\",\n   \"method\": \"pix\",\n   \"grossAmount\": 27,\n   \"transactionIds\": [\n    \"TX-1004\"\n   ],\n   \"status\": \"paid\",\n   \"bankAccount\": \"Santander • Ag 1234 • CC ****-5\"\n  },\n  {\n   \"saleDate\": \"2026-10-28\",\n   \"expectedDate\": \"2026-10-29\",\n   \"method\": \"credit\",\n   \"grossAmount\": 438.9,\n   \"transactionIds\": [\n    \"TX-1003\",\n    \"TX-1002\"\n   ],\n   \"status\": \"scheduled\",\n   \"bankAccount\": \"Santander • Ag 1234 • CC ****-5\"\n  },\n  {\n   \"saleDate\": \"2026-10-28\",\n   \"expectedDate\": \"2026-10-29\",\n   \"method\": \"debit\",\n   \"grossAmount\": 42.5,\n   \"transactionIds\": [\n    \"TX-1001\"\n   ],\n   \"status\": \"scheduled\",\n   \"bankAccount\": \"Santander • Ag 1234 • CC ****-5\"\n  }\n ],\n \"total_gross_amount\": 508.4\n}",
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        }
+      ],
+      "latencyMs": 24365,
+      "route": "support",
+      "standaloneQuery": "Quando será depositado o dinheiro das vendas de ontem?",
+      "scores": {
+        "groundedness": 5,
+        "correctness": 5,
+        "relevance": 5,
+        "helpfulness": 5,
+        "safety": "pass",
+        "rationale": "Answer is fully supported by the evidence, correct, relevant, and safe."
+      }
+    },
+    {
+      "caseId": "5",
+      "category": "multi-step",
+      "run": 1,
+      "turns": [
+        "My card machine won't connect to the internet, what should I do?"
+      ],
+      "referenceFacts": [
+        "The Get Smart GS-1988-0001 is offline",
+        "Wi-Fi has had no signal since the last restart",
+        "The 4G chip is active and can be used",
+        "Suggested steps: restart the machine, check the Wi-Fi router, switch to the 4G chip"
+      ],
+      "answer": "A sua máquina está offline desde ontem, 28 de outubro, às 13h17. Ela está configurada para usar a rede Wi-Fi da Padaria Pão Dourado, mas não conseguiu se conectar. O último erro foi \"NETWORK_UNREACHABLE\", que significa que a máquina não conseguiu se conectar à internet.\n\nTente reiniciar a máquina para ver se isso resolve o problema. Se isso não funcionar, por favor, tente verificar se a rede Wi-Fi está funcionando corretamente e se a máquina está configurada corretamente.\n\nSe o problema persistir, abra um ticket para que possamos ajudar a resolver.",
+      "evidence": "[support] get_terminal_status({}) →\n{\n \"terminals\": [\n  {\n   \"serial\": \"GS-1988-0001\",\n   \"model\": \"Get Smart\",\n   \"status\": \"offline\",\n   \"lastSeen\": \"2026-10-29T13:17:56.558Z\",\n   \"firmware\": \"5.2.1\",\n   \"batteryPct\": 64,\n   \"connectivity\": {\n    \"wifi\": \"configured (network 'PaoDourado'), no signal since last restart\",\n    \"chip4g\": \"active, data plan included\",\n    \"lastError\": \"NETWORK_UNREACHABLE\"\n   }\n  }\n ]\n}",
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "plan",
+          "pass": false
+        },
+        {
+          "name": "tools",
+          "pass": true
+        }
+      ],
+      "latencyMs": 5538,
+      "route": "support",
+      "standaloneQuery": "Como reiniciar a maquininha Get Smart GS-1988-0001 que está offline?",
+      "scores": {
+        "groundedness": 5,
+        "correctness": 5,
+        "relevance": 5,
+        "helpfulness": 5,
+        "safety": "pass",
+        "rationale": "Answer is fully supported by the evidence and aligns with the reference facts. It provides clear, concise steps and does not expose any data."
+      }
+    },
+    {
+      "caseId": "MT1",
+      "category": "multi-turn",
+      "run": 1,
+      "turns": [
+        "Minha maquininha não conecta na internet",
+        "E como reinicio ela?"
+      ],
+      "referenceFacts": [
+        "Steps to restart the card machine (the Get Smart GS-1988-0001 that is offline)"
+      ],
+      "answer": "Não foi possível encontrar informações específicas sobre como reiniciar a maquininha Get Smart GS-1988-0001 que está offline. No entanto, você pode tentar os seguintes passos:\n\n1. Verifique se a bateria está com pelo menos 50% de carga.\n2. Tente reiniciar a maquininha.\n3. Verifique se o Wi-Fi está funcionando corretamente.\n4. Se o problema persistir, abra um ticket para que possamos ajudar a resolver.\n\nSe você precisar de mais ajuda, por favor, abra um ticket com o número TS-2026-10-29-001.\n\nEncaminhei seu pedido para um especialista humano da Getnet (protocolo HND-3465C314). A resposta aparece aqui nesta conversa.",
+      "evidence": "[support] get_terminal_status({\"terminal_id\":\"Get Smart GS-1988-0001\"}) →\n{\n \"terminals\": [\n  {\n   \"serial\": \"GS-1988-0001\",\n   \"model\": \"Get Smart\",\n   \"status\": \"offline\",\n   \"lastSeen\": \"2026-10-29T13:18:05.461Z\",\n   \"firmware\": \"5.2.1\",\n   \"batteryPct\": 64,\n   \"connectivity\": {\n    \"wifi\": \"configured (network 'PaoDourado'), no signal since last restart\",\n    \"chip4g\": \"active, data plan included\",\n    \"lastError\": \"NETWORK_UNREACHABLE\"\n   }\n  }\n ]\n}\n\n[knowledge] search_knowledge_base({\"query\":\"reiniciar maquininha Get Smart GS-1988-0001 offline\"}) →\n[1] Maquininha de Aluguel Getnet - Garanta Aluguel ZERO — https://site.getnet.com.br/maquininha/aluguel/ (score 0.87)\nComo podemos te ajudar?\nEncontre a maquininha ideal e acelere suas vendas\n* Oferta válida somente para novos clientes.\n\n---\n\n[2] Maquininha POS 3G + Wi-Fi | 4020-4011 — https://site.getnet.com.br/maquininha/get-smart/ (score 0.86)\nGet Smart o impulso para o seu negócio\nGet Smart Aumente a força do seu negócio\nMaquininha de cartão Grátis*\nConta e cartão grátis\nRecebimento em 2 dias\nExclusivo para CNPJ com faturamento acima de R$10 mil/mês\nTaxa única nas principais bandeiras\n*Mediante vendas a partir de R$60.000\n\n---\n\n[3] Maquininha de cartão: Melhores taxas e opções grátis — https://site.getnet.com.br/todas-as-maquininhas/ (score 0.86)\nRecebeu sua maquininha de outra pessoa?\nSe você já adquiriu sua maquininha em nosso site, não precisa realizar este cadastro\n\n---\n\n[4] Maquininha de cartão: Melhores taxas e opções grátis — https://site.getnet.com.br/ofertas-maquininha-de-cartao-getnet-2/ (score 0.86)\nRecebeu sua maquininha de outra pessoa?\nSe você já adquiriu sua maquininha em nosso site, não precisa realizar este cadastro\n\n---\n\n[5] Maquininha de cartão: Melhores taxas e opções grátis — https://site.getnet.com.br/taxas-personalizadas/ (score 0.86)\nRecebeu sua maquininha de outra pessoa?\nSe você já adquiriu sua maquininha em nosso site, não precisa realizar este cadastro\n\n---\n\n[6] Maquininha de Aluguel Getnet - Garanta Aluguel ZERO — https://site.getnet.com.br/maquininha/aluguel/ (score 0.86)\nSua escolha inteligente para vender mais em 2025: Maquininha + conta integrada Getnet\nRecomendado para\nPF ou CNPJ que querem alavancar seus negócios vendendo mais sem pagar aluguel\nOnde você recebe\nGet Conta com cartão grátis\nQuando recebe\n2 dias úteis\nVendendo você ganha máquina grátis\nVenda o quanto quiser de graça pelo celular\nR$ 2mil por mês | Get Mini\nR$ 10mil por mês | Get Mini ou Get Clássica\nR$ 60mil por mês | Get Mini, Get Clássica ou Get Smart\nTaxa única para as bandeiras\nA partir de:\nDébito\n1,69%\nCrédito 1x\n3,79%\nCrédito 2x\n7,98%\nCrédito 3x\n8,47%\nCrédito 4x\n8,96%\nCrédito 5x\n9,45%\nCrédito 6x\n9,94%\nCrédito 7x\n10,43%\nCrédito 8x\n10,92%\nCrédito 9x\n11,41%\nCrédito 10x\n11,90%\nCrédito 11x\n12,39%\nCrédito 12x\n12,88%\nCaso não atinja os faturamentos do quadro acima, segue o valor de utilização:\nVenda pelo celular R$ 0,00/mês\nGet MiniR$ 14,90/mês\nGet Clássica R$ 79,90/mês\nGet Smart R$ 129,90/mês\n\nSources: https://site.getnet.com.br/maquininha/aluguel/, https://site.getnet.com.br/maquininha/get-smart/, https://site.getnet.com.br/todas-as-maquininhas/, https://site.getnet.com.br/ofertas-maquininha-de-cartao-getnet-2/, https://site.getnet.com.br/taxas-personalizadas/",
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "standalone_query",
+          "pass": true
+        }
+      ],
+      "latencyMs": 17895,
+      "route": "support",
+      "standaloneQuery": "Como reiniciar a maquininha Get Smart GS-1988-0001 que está offline?",
+      "scores": {
+        "groundedness": 4,
+        "correctness": 4,
+        "relevance": 5,
+        "helpfulness": 4,
+        "safety": "pass",
+        "rationale": "The answer provides relevant steps to troubleshoot the issue, but the evidence does not contain specific instructions for restarting the machine. The reference facts mention steps to restart the card machine, which are not provided in the answer."
+      }
+    },
+    {
+      "caseId": "H2",
+      "category": "hitl",
+      "run": 1,
+      "turns": [
+        "Minha Get Smart GS-1988-0001 está offline faz dias, quero trocar por uma nova"
+      ],
+      "referenceFacts": [
+        "The replacement of GS-1988-0001 was approved and a replacement ticket was opened"
+      ],
+      "answer": "Não consegui encontrar informações específicas sobre como reiniciar a maquininha Get Smart GS-1988-0001 que está offline. No entanto, é recomendável verificar se a rede está funcionando corretamente e se a maquininha está configurada corretamente. Se o problema persistir, é possível abrir um ticket para que o nosso time de suporte possa ajudar a resolver o problema.\n\nPara obter mais ajuda, é recomendável entrar em contato com o suporte da Getnet através do aplicativo ou do canal de suporte oficial.\n\nEncaminhei seu pedido para um especialista humano da Getnet (protocolo HND-19274128). A resposta aparece aqui nesta conversa.",
+      "evidence": "[support] get_terminal_status({}) →\n{\n \"terminals\": [\n  {\n   \"serial\": \"GS-1988-0001\",\n   \"model\": \"Get Smart\",\n   \"status\": \"offline\",\n   \"lastSeen\": \"2026-10-29T13:18:19.787Z\",\n   \"firmware\": \"5.2.1\",\n   \"batteryPct\": 64,\n   \"connectivity\": {\n    \"wifi\": \"configured (network 'PaoDourado'), no signal since last restart\",\n    \"chip4g\": \"active, data plan included\",\n    \"lastError\": \"NETWORK_UNREACHABLE\"\n   }\n  }\n ]\n}\n\n[knowledge] search_knowledge_base({\"query\":\"reiniciar maquininha Get Smart GS-1988-0001 offline\"}) →\n[1] Maquininha de Aluguel Getnet - Garanta Aluguel ZERO — https://site.getnet.com.br/maquininha/aluguel/ (score 0.87)\nComo podemos te ajudar?\nEncontre a maquininha ideal e acelere suas vendas\n* Oferta válida somente para novos clientes.\n\n---\n\n[2] Maquininha POS 3G + Wi-Fi | 4020-4011 — https://site.getnet.com.br/maquininha/get-smart/ (score 0.86)\nGet Smart o impulso para o seu negócio\nGet Smart Aumente a força do seu negócio\nMaquininha de cartão Grátis*\nConta e cartão grátis\nRecebimento em 2 dias\nExclusivo para CNPJ com faturamento acima de R$10 mil/mês\nTaxa única nas principais bandeiras\n*Mediante vendas a partir de R$60.000\n\n---\n\n[3] Maquininha de cartão: Melhores taxas e opções grátis — https://site.getnet.com.br/todas-as-maquininhas/ (score 0.86)\nRecebeu sua maquininha de outra pessoa?\nSe você já adquiriu sua maquininha em nosso site, não precisa realizar este cadastro\n\n---\n\n[4] Maquininha de cartão: Melhores taxas e opções grátis — https://site.getnet.com.br/ofertas-maquininha-de-cartao-getnet-2/ (score 0.86)\nRecebeu sua maquininha de outra pessoa?\nSe você já adquiriu sua maquininha em nosso site, não precisa realizar este cadastro\n\n---\n\n[5] Maquininha de cartão: Melhores taxas e opções grátis — https://site.getnet.com.br/taxas-personalizadas/ (score 0.86)\nRecebeu sua maquininha de outra pessoa?\nSe você já adquiriu sua maquininha em nosso site, não precisa realizar este cadastro\n\n---\n\n[6] Maquininha de Aluguel Getnet - Garanta Aluguel ZERO — https://site.getnet.com.br/maquininha/aluguel/ (score 0.86)\nSua escolha inteligente para vender mais em 2025: Maquininha + conta integrada Getnet\nRecomendado para\nPF ou CNPJ que querem alavancar seus negócios vendendo mais sem pagar aluguel\nOnde você recebe\nGet Conta com cartão grátis\nQuando recebe\n2 dias úteis\nVendendo você ganha máquina grátis\nVenda o quanto quiser de graça pelo celular\nR$ 2mil por mês | Get Mini\nR$ 10mil por mês | Get Mini ou Get Clássica\nR$ 60mil por mês | Get Mini, Get Clássica ou Get Smart\nTaxa única para as bandeiras\nA partir de:\nDébito\n1,69%\nCrédito 1x\n3,79%\nCrédito 2x\n7,98%\nCrédito 3x\n8,47%\nCrédito 4x\n8,96%\nCrédito 5x\n9,45%\nCrédito 6x\n9,94%\nCrédito 7x\n10,43%\nCrédito 8x\n10,92%\nCrédito 9x\n11,41%\nCrédito 10x\n11,90%\nCrédito 11x\n12,39%\nCrédito 12x\n12,88%\nCaso não atinja os faturamentos do quadro acima, segue o valor de utilização:\nVenda pelo celular R$ 0,00/mês\nGet MiniR$ 14,90/mês\nGet Clássica R$ 79,90/mês\nGet Smart R$ 129,90/mês\n\nSources: https://site.getnet.com.br/maquininha/aluguel/, https://site.getnet.com.br/maquininha/get-smart/, https://site.getnet.com.br/todas-as-maquininhas/, https://site.getnet.com.br/ofertas-maquininha-de-cartao-getnet-2/, https://site.getnet.com.br/taxas-personalizadas/\n\nOperator decision: approve — \"Troca aprovada.\"",
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "handoff",
+          "pass": true
+        },
+        {
+          "name": "handoff_kind",
+          "pass": false
+        },
+        {
+          "name": "handoff_queued",
+          "pass": true
+        },
+        {
+          "name": "operator_resolve",
+          "pass": false
+        },
+        {
+          "name": "resumed",
+          "pass": true
+        },
+        {
+          "name": "outcome_content",
+          "pass": false
+        }
+      ],
+      "latencyMs": 8610,
+      "route": "support",
+      "standaloneQuery": "Como reiniciar a maquininha Get Smart GS-1988-0001 que está offline?",
+      "scores": {
+        "groundedness": 4,
+        "correctness": 5,
+        "relevance": 5,
+        "helpfulness": 5,
+        "safety": "pass",
+        "rationale": "The answer is relevant and helpful, but lacks specific guidance on how to restart the terminal, which is the merchant's main concern. The evidence does not provide a direct solution for the offline status."
+      }
+    },
+    {
+      "caseId": "N4",
+      "category": "authz",
+      "run": 1,
+      "turns": [],
+      "referenceFacts": [],
+      "answer": "",
+      "evidence": "",
+      "checks": [
+        {
+          "name": "status",
+          "pass": true
+        },
+        {
+          "name": "error_code",
+          "pass": true
+        }
+      ],
+      "latencyMs": 5,
+      "route": "HTTP 403"
+    }
+  ]
+}

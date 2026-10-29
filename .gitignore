@@ -2,5 +2,9 @@ node_modules/
 dist/
 .models/
 .env
-eval-report.json
+
 *.log
+
+# runtime state (SQLite, generated JWT key)
+var/
+/eval-report.json

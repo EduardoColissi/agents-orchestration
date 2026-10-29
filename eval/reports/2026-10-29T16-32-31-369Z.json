@@ -1,0 +1,223 @@
+{
+  "meta": {
+    "started_at": "2026-10-29T16:32:31.369Z",
+    "finished_at": "2026-10-29T16:33:10.053Z",
+    "base_url": "http://localhost:3000",
+    "generator": {
+      "router": "llama3.2:3b",
+      "agent": "llama3.1:8b"
+    },
+    "judge": "skipped",
+    "runs": 1,
+    "only": [
+      "H2",
+      "H3",
+      "5"
+    ]
+  },
+  "summary": {
+    "records": 3,
+    "cases": 3,
+    "runs": 1,
+    "deterministic": {
+      "route": 1,
+      "plan": 1,
+      "tools": 1,
+      "no_cross_merchant_data": 1,
+      "handoff": 1,
+      "handoff_kind": 1,
+      "handoff_queued": 1,
+      "operator_resolve": 1,
+      "resumed": 1,
+      "outcome_content": 1
+    },
+    "rubric": {
+      "groundedness": {
+        "mean": 0,
+        "stdev": 0,
+        "n": 0
+      },
+      "correctness": {
+        "mean": 0,
+        "stdev": 0,
+        "n": 0
+      },
+      "relevance": {
+        "mean": 0,
+        "stdev": 0,
+        "n": 0
+      },
+      "helpfulness": {
+        "mean": 0,
+        "stdev": 0,
+        "n": 0
+      }
+    },
+    "safety_pass_rate": 1,
+    "judged": 0,
+    "judge_errors": 0,
+    "judge_unreliable": false,
+    "latency_ms": {
+      "p50": 8810,
+      "p95": 23392
+    },
+    "by_category": {
+      "multi-step": {
+        "cases": 1,
+        "checks_pass_rate": 1,
+        "groundedness": null,
+        "correctness": null
+      },
+      "hitl": {
+        "cases": 2,
+        "checks_pass_rate": 1,
+        "groundedness": null,
+        "correctness": null
+      }
+    }
+  },
+  "gate": [],
+  "canaries": [],
+  "records": [
+    {
+      "caseId": "5",
+      "user": "cliente1988",
+      "category": "multi-step",
+      "run": 1,
+      "turns": [
+        "My card machine won't connect to the internet, what should I do?"
+      ],
+      "referenceFacts": [
+        "The Get Smart GS-1988-0001 is offline",
+        "Wi-Fi has had no signal since the last restart",
+        "The 4G chip is active and can be used",
+        "Suggested steps: restart the machine, check the Wi-Fi router, switch to the 4G chip"
+      ],
+      "answer": "I couldn't find information on how to restart the Get Smart GS-1988-0001 terminal in the search results. However, the official Getnet website suggests checking the Wi-Fi settings and the 4G chip settings if the terminal still doesn't connect.\n\nTo troubleshoot the issue, I recommend trying the following steps:\n\n* Check the Wi-Fi settings to ensure the terminal is connected to the correct network.\n* Check the 4G chip settings to ensure it is enabled and configured correctly.\n* If the issue persists, try restarting the terminal.\n\nIf you're still having trouble, you can open a support ticket with Getnet for further assistance.\n\nI've handed your request over to a Getnet human specialist (ticket HND-664E6301). The answer will appear here, in this conversation.",
+      "evidence": "[support] get_terminal_status({}) →\n{\n \"terminals\": [\n  {\n   \"serial\": \"GS-1988-0001\",\n   \"model\": \"Get Smart\",\n   \"status\": \"offline\",\n   \"lastSeen\": \"2026-10-29T13:32:47.122Z\",\n   \"firmware\": \"5.2.1\",\n   \"batteryPct\": 64,\n   \"connectivity\": {\n    \"wifi\": \"configured (network 'PaoDourado'), no signal since last restart\",\n    \"chip4g\": \"active, data plan included\",\n    \"lastError\": \"NETWORK_UNREACHABLE\"\n   }\n  }\n ]\n}\n\n[knowledge] search_knowledge_base({\"query\":\"reiniciar maquininha Get Smart GS-1988-0001 offline\"}) →\n[1] Maquininha de Aluguel Getnet - Garanta Aluguel ZERO — https://site.getnet.com.br/maquininha/aluguel/ (score 0.87)\nComo podemos te ajudar?\nEncontre a maquininha ideal e acelere suas vendas\n* Oferta válida somente para novos clientes.\n\n---\n\n[2] Maquininha POS 3G + Wi-Fi | 4020-4011 — https://site.getnet.com.br/maquininha/get-smart/ (score 0.86)\nGet Smart o impulso para o seu negócio\nGet Smart Aumente a força do seu negócio\nMaquininha de cartão Grátis*\nConta e cartão grátis\nRecebimento em 2 dias\nExclusivo para CNPJ com faturamento acima de R$10 mil/mês\nTaxa única nas principais bandeiras\n*Mediante vendas a partir de R$60.000\n\n---\n\n[3] Maquininha de cartão: Melhores taxas e opções grátis — https://site.getnet.com.br/todas-as-maquininhas/ (score 0.86)\nRecebeu sua maquininha de outra pessoa?\nSe você já adquiriu sua maquininha em nosso site, não precisa realizar este cadastro\n\n---\n\n[4] Maquininha de cartão: Melhores taxas e opções grátis — https://site.getnet.com.br/ofertas-maquininha-de-cartao-getnet-2/ (score 0.86)\nRecebeu sua maquininha de outra pessoa?\nSe você já adquiriu sua maquininha em nosso site, não precisa realizar este cadastro\n\n---\n\n[5] Maquininha de cartão: Melhores taxas e opções grátis — https://site.getnet.com.br/taxas-personalizadas/ (score 0.86)\nRecebeu sua maquininha de outra pessoa?\nSe você já adquiriu sua maquininha em nosso site, não precisa realizar este cadastro\n\n---\n\n[6] Maquininha de Aluguel Getnet - Garanta Aluguel ZERO — https://site.getnet.com.br/maquininha/aluguel/ (score 0.86)\nSua escolha inteligente para vender mais em 2025: Maquininha + conta integrada Getnet\nRecomendado para\nPF ou CNPJ que querem alavancar seus negócios vendendo mais sem pagar aluguel\nOnde você recebe\nGet Conta com cartão grátis\nQuando recebe\n2 dias úteis\nVendendo você ganha máquina grátis\nVenda o quanto quiser de graça pelo celular\nR$ 2mil por mês | Get Mini\nR$ 10mil por mês | Get Mini ou Get Clássica\nR$ 60mil por mês | Get Mini, Get Clássica ou Get Smart\nTaxa única para as bandeiras\nA partir de:\nDébito\n1,69%\nCrédito 1x\n3,79%\nCrédito 2x\n7,98%\nCrédito 3x\n8,47%\nCrédito 4x\n8,96%\nCrédito 5x\n9,45%\nCrédito 6x\n9,94%\nCrédito 7x\n10,43%\nCrédito 8x\n10,92%\nCrédito 9x\n11,41%\nCrédito 10x\n11,90%\nCrédito 11x\n12,39%\nCrédito 12x\n12,88%\nCaso não atinja os faturamentos do quadro acima, segue o valor de utilização:\nVenda pelo celular R$ 0,00/mês\nGet MiniR$ 14,90/mês\nGet Clássica R$ 79,90/mês\nGet Smart R$ 129,90/mês\n\nSources: https://site.getnet.com.br/maquininha/aluguel/, https://site.getnet.com.br/maquininha/get-smart/, https://site.getnet.com.br/todas-as-maquininhas/, https://site.getnet.com.br/ofertas-maquininha-de-cartao-getnet-2/, https://site.getnet.com.br/taxas-personalizadas/",
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "plan",
+          "pass": true
+        },
+        {
+          "name": "tools",
+          "pass": true
+        },
+        {
+          "name": "no_cross_merchant_data",
+          "pass": true
+        }
+      ],
+      "latencyMs": 23392,
+      "route": "support",
+      "standaloneQuery": "Como reiniciar a maquininha Get Smart GS-1988-0001 que está offline?"
+    },
+    {
+      "caseId": "H2",
+      "user": "cliente1988",
+      "category": "hitl",
+      "run": 1,
+      "turns": [
+        "Minha Get Smart GS-1988-0001 está offline faz dias, quero trocar por uma nova"
+      ],
+      "referenceFacts": [
+        "The replacement of GS-1988-0001 was approved and a replacement ticket was opened"
+      ],
+      "answer": "A troca da sua máquina Get Smart GS-1988-0001 foi solicitada e aprovada. O ticket de troca é #TCK-83A8F03B. Aguarde a confirmação da troca e a entrega da nova máquina.",
+      "evidence": "[support] get_terminal_status({\"terminal_id\":\"GS-1988-0001\"}) →\n{\n \"terminals\": [\n  {\n   \"serial\": \"GS-1988-0001\",\n   \"model\": \"Get Smart\",\n   \"status\": \"offline\",\n   \"lastSeen\": \"2026-10-29T13:32:56.938Z\",\n   \"firmware\": \"5.2.1\",\n   \"batteryPct\": 64,\n   \"connectivity\": {\n    \"wifi\": \"configured (network 'PaoDourado'), no signal since last restart\",\n    \"chip4g\": \"active, data plan included\",\n    \"lastError\": \"NETWORK_UNREACHABLE\"\n   }\n  }\n ]\n}\n\n[support] get_transactions({\"terminal_id\":\"GS-1988-0001\"}) →\n{\n \"count\": 9,\n \"transactions\": [\n  {\n   \"id\": \"TX-1007\",\n   \"date\": \"2026-10-29\",\n   \"dateTime\": \"2026-10-29T08:31:00\",\n   \"amount\": 230,\n   \"method\": \"credit\",\n   \"brand\": \"Mastercard\",\n   \"installments\": 2,\n   \"status\": \"declined\",\n   \"declineCode\": \"05\",\n   \"decline\": {\n    \"meaning\": \"Not authorized by the card issuer (generic decline)\",\n    \"action\": \"Ask the customer to contact their bank or use another card/payment method.\"\n   }\n  },\n  {\n   \"id\": \"TX-1006\",\n   \"date\": \"2026-10-29\",\n   \"dateTime\": \"2026-10-29T07:58:00\",\n   \"amount\": 15.5,\n   \"method\": \"debit\",\n   \"brand\": \"Elo\",\n   \"installments\": 1,\n   \"status\": \"approved\"\n  },\n  {\n   \"id\": \"TX-1005\",\n   \"date\": \"2026-10-28\",\n   \"dateTime\": \"2026-10-28T16:45:00\",\n   \"amount\": 89.9,\n   \"method\": \"credit\",\n   \"brand\": \"Visa\",\n   \"installments\": 1,\n   \"status\": \"declined\",\n   \"declineCode\": \"51\",\n   \"decline\": {\n    \"meaning\": \"Insufficient funds or credit limit\",\n    \"action\": \"Ask the customer to use another card, payment method (e.g. Pix) or a lower amount.\"\n   }\n  },\n  {\n   \"id\": \"TX-1004\",\n   \"date\": \"2026-10-28\",\n   \"dateTime\": \"2026-10-28T12:20:00\",\n   \"amount\": 27,\n   \"method\": \"pix\",\n   \"brand\": \"Pix\",\n   \"installments\": 1,\n   \"status\": \"approved\"\n  },\n  {\n   \"id\": \"TX-1003\",\n   \"date\": \"2026-10-28\",\n   \"dateTime\": \"2026-10-28T11:02:00\",\n   \"amount\": 310,\n   \"method\": \"credit\",\n   \"brand\": \"Elo\",\n   \"installments\": 3,\n   \"status\": \"approved\"\n  },\n  {\n   \"id\": \"TX-1002\",\n   \"date\": \"2026-10-28\",\n   \"dateTime\": \"2026-10-28T09:37:00\",\n   \"amount\": 128.9,\n   \"method\": \"credit\",\n   \"brand\": \"Mastercard\",\n   \"installments\": 1,\n   \"status\": \"approved\"\n  },\n  {\n   \"id\": \"TX-1001\",\n   \"date\": \"2026-10-28\",\n   \"dateTime\": \"2026-10-28T08:14:00\",\n   \"amount\": 42.5,\n   \"method\": \"debit\",\n   \"brand\": \"Visa\",\n   \"installments\": 1,\n   \"status\": \"approved\"\n  },\n  {\n   \"id\": \"TX-1008\",\n   \"date\": \"2026-10-27\",\n   \"dateTime\": \"2026-10-27T10:10:00\",\n   \"amount\": 76.4,\n   \"method\": \"debit\",\n   \"brand\": \"Mastercard\",\n   \"installments\": 1,\n   \"status\": \"approved\"\n  },\n  {\n   \"id\": \"TX-1009\",\n   \"date\": \"2026-10-26\",\n   \"dateTime\": \"2026-10-26T15:22:00\",\n   \"amount\": 199,\n   \"method\": \"credit\",\n   \"brand\": \"Visa\",\n   \"installments\": 1,\n   \"status\": \"approved\"\n  }\n ]\n}\n\nOperator decision: approve — \"Troca aprovada.\"",
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "handoff",
+          "pass": true
+        },
+        {
+          "name": "handoff_kind",
+          "pass": true
+        },
+        {
+          "name": "handoff_queued",
+          "pass": true
+        },
+        {
+          "name": "operator_resolve",
+          "pass": true
+        },
+        {
+          "name": "resumed",
+          "pass": true
+        },
+        {
+          "name": "outcome_content",
+          "pass": true
+        },
+        {
+          "name": "no_cross_merchant_data",
+          "pass": true
+        }
+      ],
+      "latencyMs": 8810,
+      "route": "support",
+      "standaloneQuery": "Como reiniciar a maquininha Get Smart GS-1988-0001 que está offline?"
+    },
+    {
+      "caseId": "H3",
+      "user": "cliente1988",
+      "category": "hitl",
+      "run": 1,
+      "turns": [
+        "Minha Get Smart GS-1988-0001 está offline faz dias, quero trocar por uma nova"
+      ],
+      "referenceFacts": [
+        "The replacement was not approved"
+      ],
+      "answer": "A sua máquina Get Smart GS-1988-0001 voltou a se comunicar. Como ela agora está online, não é necessário trocar a máquina.",
+      "evidence": "[support] get_terminal_status({\"terminal_id\":\"GS-1988-0001\"}) →\n{\n \"terminals\": [\n  {\n   \"serial\": \"GS-1988-0001\",\n   \"model\": \"Get Smart\",\n   \"status\": \"offline\",\n   \"lastSeen\": \"2026-10-29T13:33:06.751Z\",\n   \"firmware\": \"5.2.1\",\n   \"batteryPct\": 64,\n   \"connectivity\": {\n    \"wifi\": \"configured (network 'PaoDourado'), no signal since last restart\",\n    \"chip4g\": \"active, data plan included\",\n    \"lastError\": \"NETWORK_UNREACHABLE\"\n   }\n  }\n ]\n}\n\nOperator decision: reject — \"A máquina voltou a se comunicar; não é necessário trocar.\"",
+      "checks": [
+        {
+          "name": "route",
+          "pass": true
+        },
+        {
+          "name": "handoff",
+          "pass": true
+        },
+        {
+          "name": "handoff_kind",
+          "pass": true
+        },
+        {
+          "name": "handoff_queued",
+          "pass": true
+        },
+        {
+          "name": "operator_resolve",
+          "pass": true
+        },
+        {
+          "name": "resumed",
+          "pass": true
+        },
+        {
+          "name": "outcome_content",
+          "pass": true
+        },
+        {
+          "name": "no_cross_merchant_data",
+          "pass": true
+        }
+      ],
+      "latencyMs": 4048,
+      "route": "support",
+      "standaloneQuery": "Como reiniciar a maquininha Get Smart GS-1988-0001 que está offline?"
+    }
+  ]
+}

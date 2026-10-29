@@ -48,4 +48,42 @@ describe('runToolLoop', () => {
     expect(result.hitIterationLimit).toBe(true);
     expect(llm.calls).toHaveLength(2);
   });
+
+  it('records evidence and sends the last iteration without tools', async () => {
+    const llm = new FakeLLM([{ toolCalls: [{ name: 'echo', input: { v: 1 } }] }, { text: 'done' }]);
+    const echo: AgentTool = { spec: { name: 'echo', description: '', inputSchema: {} }, execute: async () => ({ content: 'card 4111 1111 1111 1111' }) };
+    const out = await runToolLoop({ llm, model: 'm', system: 's', userMessage: 'q', tools: [echo], maxIterations: 2 });
+    expect(out.text).toBe('done');
+    expect(out.evidence).toEqual([{ name: 'echo', input: { v: 1 }, output: expect.not.stringContaining('4111 1111'), isError: false, durationMs: expect.any(Number) }]);
+    expect(llm.calls[0]!.toolChoice).toBeUndefined();
+    expect(llm.calls[1]!.toolChoice).toBe('none');
+  });
+
+  it('an invalid approval-gated call does not interrupt: the error goes back to the model', async () => {
+    const llm = new FakeLLM([{ toolCalls: [{ name: 'gated', input: { wrong: 1 } }] }, { toolCalls: [{ name: 'gated', input: { serial: 'GS-1' } }] }]);
+    const gated: AgentTool = {
+      spec: { name: 'gated', description: '', inputSchema: {} },
+      requiresApproval: true,
+      validate: (i) => ((i as { serial?: string }).serial ? null : 'Invalid input for gated: serial required'),
+      execute: async () => ({ content: 'Invalid input for gated: serial required', isError: true }),
+    };
+    const out = await runToolLoop({ llm, model: 'm', system: 's', userMessage: 'q', tools: [gated], maxIterations: 3 });
+    expect(out.interrupt?.pendingCall.input).toEqual({ serial: 'GS-1' });
+    expect(JSON.stringify(llm.calls[1]!.messages.at(-1))).toContain('serial required');
+  });
+
+  it('never executes an approval-gated tool inside the loop, even a second valid call in the same turn', async () => {
+    const llm = new FakeLLM([{ toolCalls: [{ name: 'gated', input: { serial: 'A' } }, { name: 'gated', input: { serial: 'B' } }] }]);
+    let executions = 0;
+    const gated: AgentTool = {
+      spec: { name: 'gated', description: '', inputSchema: {} },
+      requiresApproval: true,
+      validate: () => null,
+      execute: async () => (executions++, { content: 'done' }),
+    };
+    const out = await runToolLoop({ llm, model: 'm', system: 's', userMessage: 'q', tools: [gated], maxIterations: 3 });
+    expect(executions).toBe(0);
+    expect(out.interrupt?.pendingCall.input).toEqual({ serial: 'A' });
+    expect(out.interrupt?.siblingResults[0]).toMatchObject({ is_error: true, content: expect.stringContaining('only one action needing approval') });
+  });
 });

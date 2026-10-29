@@ -5,6 +5,6 @@ export default defineConfig({
     include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
     environment: 'node',
     // Tests never touch the network or the real LLM.
-    env: { LOG_LEVEL: 'silent' },
+    env: { LOG_LEVEL: 'silent', NODE_NO_WARNINGS: '1' },
   },
 });

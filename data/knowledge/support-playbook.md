@@ -24,3 +24,26 @@
 - Sales are deposited according to the merchant's plan (for example, "receive in 1 business day").
 - Settlements happen on business days; sales made on Friday with D+1 are deposited on Monday.
 - Amounts in the statement are gross; the plan fees are discounted at settlement.
+
+## Maquininha offline ou sem internet: como reiniciar e reconectar a máquina de cartão
+
+1. Confira a barra de status da maquininha: o ícone de Wi-Fi ou de 4G mostra se há sinal.
+2. Reinicie a maquininha: segure o botão de ligar até ela desligar, espere 10 segundos e ligue de novo.
+3. Se usa Wi-Fi, confira se o roteador está ligado e se outros aparelhos navegam. Configure a rede de novo nas configurações da maquininha se a senha mudou.
+4. Se usa o chip 4G, leve a maquininha para perto de uma janela ou área aberta; balcões de metal e subsolos reduzem o sinal.
+5. Troque o modo de conexão (Wi-Fi ↔ chip 4G) para saber se o problema é a rede ou a maquininha.
+6. Confira se a bateria está acima de 15%; algumas maquininhas desligam a conexão no modo de economia.
+7. Se a maquininha continuar offline depois desses passos, abra um chamado de suporte com o número de série para um técnico verificar o aparelho ou enviar uma troca.
+
+## Venda recusada na maquininha
+
+- A recusa normalmente vem do emissor do cartão (o banco do cliente), não da maquininha.
+- Leia o código de recusa na tela ou no comprovante. Códigos comuns: 05 não autorizada pelo emissor, 51 saldo ou limite insuficiente, 55 senha incorreta, 54 cartão vencido, 57 transação não permitida para o cartão, 91 emissor indisponível.
+- Peça ao cliente para tentar outro cartão ou outra forma de pagamento (débito, QR Code Pix).
+- Se todos os cartões forem recusados, o problema pode ser a conexão ou o cadastro da maquininha: reinicie e abra um chamado de suporte.
+
+## Dúvidas sobre repasse das vendas
+
+- As vendas são depositadas conforme o plano do lojista (por exemplo, "receba em 1 dia útil").
+- Os repasses acontecem em dias úteis; vendas de sexta-feira com D+1 caem na segunda-feira.
+- Os valores do extrato são brutos; as taxas do plano são descontadas no repasse.

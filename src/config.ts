@@ -5,21 +5,42 @@ const ConfigSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default('0.0.0.0'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  /** Commit the running build came from (Docker build arg); reported by /health and recorded in eval reports. */
+  GIT_SHA: z.string().default('dev'),
+  /** Chat turns per minute per authenticated merchant (each turn costs several LLM calls). */
+  CHAT_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(1).default(20),
 
-  /** anthropic = Claude API (default); ollama = free local models, no API key. */
-  LLM_PROVIDER: z.enum(['anthropic', 'ollama']).default('anthropic'),
+  /** ollama = free local models, no API key (default); anthropic = Claude API. */
+  LLM_PROVIDER: z.enum(['anthropic', 'ollama']).default('ollama'),
   ANTHROPIC_API_KEY: z.string().optional(),
   /** Required only for organisation-level keys (sk-ant-usr…), which must name a workspace. */
   ANTHROPIC_WORKSPACE_ID: z.string().optional(),
   OLLAMA_URL: z.string().default('http://localhost:11434'),
-  OLLAMA_MODEL: z.string().default('qwen2.5:7b'),
+  /** Cheap router + stronger specialists, also on the local provider. */
+  OLLAMA_ROUTER_MODEL: z.string().default('llama3.2:3b'),
+  OLLAMA_AGENT_MODEL: z.string().default('llama3.1:8b'),
+  OLLAMA_NUM_CTX: z.coerce.number().int().min(2048).default(8192),
+  OLLAMA_KEEP_ALIVE: z.string().default('30m'),
   ROUTER_MODEL: z.string().default('claude-haiku-5-5'),
   AGENT_MODEL: z.string().default('claude-sonnet-5-5'),
-  PERSONALITY_ENABLED: z.stringbool().default(true),
+  /** Off by default: an extra LLM call per answer is slow on local models. */
+  PERSONALITY_ENABLED: z.stringbool().default(false),
   PERSONALITY_MODEL: z.string().default('claude-haiku-5-5'),
   WEB_SEARCH_MAX_USES: z.coerce.number().int().min(0).max(5).default(2),
   ROUTER_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
   AGENT_MAX_ITERATIONS: z.coerce.number().int().min(1).max(10).default(5),
+
+  /** SQLite file (conversations, handoffs, tickets, audit). A Docker volume in compose. */
+  DB_PATH: z.string().default('var/app.db'),
+  /** HS256 key (>= 32 chars). Unset = generated once and kept next to DB_PATH. */
+  AUTH_JWT_SECRET: z.string().min(32).optional(),
+  AUTH_ISSUER: z.string().default('getnet-support'),
+  AUTH_AUDIENCE: z.string().default('getnet-support-api'),
+  AUTH_TOKEN_TTL_S: z.coerce.number().int().min(60).max(86400).default(3600),
+  USERS_PATH: z.string().default('data/users.json'),
+  /** Pending handoffs expire after this many minutes (an expired approval never executes). */
+  HANDOFF_TTL_MINUTES: z.coerce.number().int().min(1).default(240),
+  SWEEP_INTERVAL_MS: z.coerce.number().int().min(1000).default(60000),
 
   INDEX_PATH: z.string().default('data/index.json'),
   SOURCES_PATH: z.string().default('data/sources.json'),

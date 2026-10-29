@@ -1,4 +1,3 @@
-import type { CustomerRepository } from '../support/repository.js';
 import { emptyUsage, type AgentResult } from '../types.js';
 
 export type HandoffReason =
@@ -10,35 +9,38 @@ export type HandoffReason =
   | 'customer_not_found'
   | 'agent_error'
   | 'knowledge_agent_incomplete'
-  | 'support_agent_incomplete';
+  | 'support_agent_incomplete'
+  | 'tool_error';
 
-const MESSAGES: Record<string, (ticket: string) => string> = {
-  pt: (t) => `Encaminhei seu atendimento para um especialista humano da Getnet (protocolo ${t}). Você receberá retorno pelos canais cadastrados; se for urgente, ligue para a central de atendimento Getnet informando o protocolo.`,
-  es: (t) => `Derivé tu solicitud a un especialista humano de Getnet (protocolo ${t}). Te contactarán por los canales registrados; si es urgente, llama a la central de atención de Getnet con el protocolo.`,
-  en: (t) => `I've handed your request over to a Getnet human specialist (ticket ${t}). They will contact you through your registered channels; if it's urgent, call Getnet customer service and mention the ticket.`,
+const MESSAGES: Record<string, (id: string) => string> = {
+  pt: (id) => `Encaminhei seu pedido para um especialista humano da Getnet (protocolo ${id}). A resposta aparece aqui nesta conversa.`,
+  es: (id) => `Derivé tu solicitud a un especialista humano de Getnet (protocolo ${id}). La respuesta aparecerá aquí, en esta conversación.`,
+  en: (id) => `I've handed your request over to a Getnet human specialist (ticket ${id}). The answer will appear here, in this conversation.`,
+};
+
+const ALREADY_OPEN: Record<string, (id: string) => string> = {
+  pt: (id) => `Seu pedido ${id} já está com um especialista humano. A resposta aparece aqui nesta conversa.`,
+  es: (id) => `Tu solicitud ${id} ya está con un especialista humano. La respuesta aparecerá aquí, en esta conversación.`,
+  en: (id) => `Your request ${id} is already with a human specialist. The answer will appear here, in this conversation.`,
 };
 
 /**
- * Human Escalation Agent (bonus). Deterministic on purpose: handoff must work even when the
- * LLM is unavailable, and its behaviour should be 100% predictable and testable.
+ * Human Escalation Agent. Deterministic on purpose: handoff must work even when the LLM is
+ * unavailable. It does not resolve anything itself: it puts the request in the operator queue
+ * (an `assist` handoff, persisted by the chat service) and tells the merchant the protocol.
  */
 export class EscalationAgent {
   readonly name = 'escalation' as const;
 
-  constructor(private readonly repo: CustomerRepository) {}
-
-  async handoff(params: { userId: string; language: string; reason: HandoffReason | string; message: string; existingTicketId?: string }): Promise<AgentResult> {
-    const ticketId =
-      params.existingTicketId ??
-      (await this.repo.createTicket({ userId: params.userId, category: 'human_handoff', summary: `[${params.reason}] ${params.message}` })).id;
-    const template = MESSAGES[params.language] ?? MESSAGES.en!;
+  handoff(params: { language: string; reason: HandoffReason | string; handoffId: string; alreadyOpen: boolean }): AgentResult {
+    const template = (params.alreadyOpen ? ALREADY_OPEN : MESSAGES)[params.language] ?? (params.alreadyOpen ? ALREADY_OPEN : MESSAGES).en!;
     return {
       agent: this.name,
-      answer: template(ticketId),
+      answer: template(params.handoffId),
       sources: [],
-      toolsUsed: params.existingTicketId ? [] : ['create_handoff_ticket'],
+      toolsUsed: [],
       usage: emptyUsage(),
-      handoff: { reason: params.reason, ticketId },
+      handoff: { reason: params.reason },
     };
   }
 }

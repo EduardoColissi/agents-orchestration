@@ -32,10 +32,23 @@ export interface AgentContext {
   message: string;
   /** ISO 639-1 code detected by the Router (e.g. "en", "pt"). */
   language: string;
+  /** Conversation context block (summary + recent messages), '' for a new conversation. */
+  history: string;
+  /** Self-contained question from the Router (follow-ups resolved); equals `message` otherwise. */
+  query: string;
   /** Outputs of earlier steps in the same plan (FR2). */
   previous: AgentResult[];
   /** Agents that will run after this one in the same plan. */
   nextSteps: AgentName[];
+}
+
+/** One executed tool call, kept as evidence for operators and the evaluation judge. */
+export interface ToolEvidence {
+  name: string;
+  input: unknown;
+  output: string;
+  isError: boolean;
+  durationMs?: number;
 }
 
 export interface HandoffRequest {
@@ -51,6 +64,10 @@ export interface AgentResult {
   usage: TokenUsage;
   /** Set when the agent could not resolve the request and a human should take over. */
   handoff?: HandoffRequest;
+  /** Tool calls executed by this agent, with their (masked) outputs. */
+  evidence?: ToolEvidence[];
+  /** Support agent: the run stopped before an approval-gated tool (HITL checkpoint). */
+  approval?: { checkpoint: unknown; proposedAction: { tool: string; input: unknown } };
   /** Knowledge agent: true when it explicitly said the information was not found. */
   notFound?: boolean;
 }

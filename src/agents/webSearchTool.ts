@@ -15,7 +15,10 @@ export async function searchDuckDuckGo(query: string, fetchImpl: typeof fetch = 
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`DuckDuckGo ${res.status}`);
-  return parseDuckDuckGo(await res.text(), limit);
+  const html = await res.text();
+  // DuckDuckGo answers 202 with a bot challenge when it blocks a network: that is "unavailable", not "no results".
+  if (res.status === 202 || /anomaly-modal|challenge-form/i.test(html)) throw new Error('the search provider blocked this request (bot challenge); live web data is unavailable');
+  return parseDuckDuckGo(html, limit);
 }
 
 export function parseDuckDuckGo(html: string, limit = 5): WebSearchHit[] {

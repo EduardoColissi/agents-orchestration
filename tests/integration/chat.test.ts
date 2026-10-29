@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildTestApp, kindOf, route, scriptedLLM } from '../helpers.js';
+import { buildTestApp, kindOf, route, scriptedLLM, tokenFor } from '../helpers.js';
 
-const post = (app: Awaited<ReturnType<typeof buildTestApp>>['app'], message: string, user_id = 'cliente1988') =>
-  app.inject({ method: 'POST', url: '/chat', payload: { message, user_id } });
+const post = async (app: Awaited<ReturnType<typeof buildTestApp>>['app'], message: string, user_id = 'cliente1988') =>
+  app.inject({ method: 'POST', url: '/chat', payload: { message, user_id }, headers: { authorization: await tokenFor(user_id) } });
 
 describe('POST /chat — happy paths (spec §8 scenarios)', () => {
   it('#1 knowledge via RAG: searches the KB and returns sources', async () => {
@@ -127,11 +127,13 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     expect((await post(app, 'How do I launder money through my card machine sales?')).json().route).toBe('blocked');
   });
 
-  it('N2: explicit request for a human escalates with a ticket', async () => {
+  it('N2: explicit request for a human queues an assist handoff (no ticket)', async () => {
     const { app, repo } = await buildTestApp(scriptedLLM({ router: [route({ route: 'escalation', plan: [] })] }));
     const body = (await post(app, 'I want to talk to a human')).json();
     expect(body).toMatchObject({ route: 'escalation', agents: ['router', 'escalation'], handoff: { required: true, reason: 'user_requested' } });
-    expect(repo.listTickets('cliente1988')[0]!.category).toBe('human_handoff');
+    expect(body.handoff).toMatchObject({ handoff_id: expect.stringMatching(/^HND-/), kind: 'assist', status: 'pending' });
+    expect(body.answer).toContain(body.handoff.handoff_id);
+    expect(repo.listTickets('cliente1988')).toHaveLength(0);
   });
 
   it('N3: unknown user gets a graceful answer and a handoff offer, without calling the support LLM', async () => {
@@ -140,12 +142,12 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     const body = (await post(app, 'When will my sales be deposited?', 'ghost42')).json();
     expect(body.answer).toContain("couldn't find a Getnet account");
     expect(body.answer).toContain('human agent');
-    expect(body.handoff).toEqual({ required: true, reason: 'customer_not_found', ticket_id: null });
+    expect(body.handoff).toEqual({ required: true, reason: 'customer_not_found', ticket_id: null, handoff_id: null, kind: null, status: null });
     expect(repo.listTickets()).toHaveLength(0);
     expect(llm.calls.some((c) => kindOf(c) === 'support')).toBe(false);
   });
 
-  it('does not open a second ticket when support already opened one and knowledge hands off', async () => {
+  it('support opened a ticket and knowledge found nothing: one ticket, the support answer, no extra handoff', async () => {
     const llm = scriptedLLM({
       router: [route({ route: 'support', plan: ['support', 'knowledge'] })],
       support: [{ toolCalls: [{ name: 'create_support_ticket', input: { category: 'connectivity', summary: 'Machine offline for 2 days' } }] }, { text: 'Opened a ticket.' }],
@@ -155,7 +157,8 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     const body = (await post(app, "My machine won't turn on")).json();
     const tickets = repo.listTickets('cliente1988');
     expect(tickets).toHaveLength(1);
-    expect(body.handoff).toMatchObject({ required: true, reason: 'knowledge_gap', ticket_id: tickets[0]!.id });
+    expect(body.answer).toBe('Opened a ticket.');
+    expect(body.handoff).toMatchObject({ required: false, reason: 'support_ticket_opened', ticket_id: tickets[0]!.id });
   });
 
   it('normalises regional language codes from the Router (pt-BR → pt templates)', async () => {
@@ -185,7 +188,7 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     const empty = await post(app, '   ');
     expect(empty.statusCode).toBe(400);
     expect(empty.json().details.message).toBeDefined();
-    const malformed = await app.inject({ method: 'POST', url: '/chat', headers: { 'content-type': 'application/json' }, payload: '{"message":' });
+    const malformed = await app.inject({ method: 'POST', url: '/chat', headers: { 'content-type': 'application/json', authorization: await tokenFor('cliente1988') }, payload: '{"message":' });
     expect(malformed.statusCode).toBe(400);
   });
 
@@ -212,7 +215,7 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     const body = (await post(app, 'How many installments can I split a sale into with the crediário?')).json();
     expect(body.answer).not.toContain('<<NOT_FOUND>>');
     expect(body.agents).toEqual(['router', 'knowledge', 'escalation']);
-    expect(body.handoff).toMatchObject({ required: true, reason: 'knowledge_gap', ticket_id: expect.stringMatching(/^TCK-/) });
+    expect(body.handoff).toMatchObject({ required: true, reason: 'knowledge_gap', ticket_id: null, handoff_id: expect.stringMatching(/^HND-/), kind: 'assist' });
   });
 
   it('ungrounded knowledge answers get a disclaimer and a handoff flag', async () => {
@@ -272,6 +275,6 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
 
   it('GET /health reports the knowledge base size', async () => {
     const { app } = await buildTestApp(scriptedLLM({}));
-    expect((await app.inject({ method: 'GET', url: '/health' })).json()).toEqual({ status: 'ok', knowledge_base_chunks: 4 });
+    expect((await app.inject({ method: 'GET', url: '/health' })).json()).toMatchObject({ status: 'ok', version: 'dev', knowledge_base_chunks: 5, provider: 'ollama', models: { router: 'llama3.2:3b', agent: 'llama3.1:8b' } });
   });
 });

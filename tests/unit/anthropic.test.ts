@@ -59,4 +59,33 @@ describe('AnthropicClient', () => {
     expect(res.usage).toEqual({ inputTokens: 10, outputTokens: 6, webSearches: 1 });
     expect(res.assistantContent).toHaveLength(2);
   });
+
+  it('learns when a model rejects a forced tool_choice or temperature and retries without them', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const errors = [
+      new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"tool_choice: type \\"tool\\" and \\"any\\" are not supported for this model."}}'),
+      new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"temperature: Extra inputs are not permitted"}}'),
+    ];
+    const client = {
+      messages: {
+        create: async (params: Record<string, unknown>) => {
+          sent.push(structuredClone(params));
+          const err = errors.shift();
+          if (err) throw err;
+          return { stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 }, content: [{ type: 'tool_use', id: 't', name: 'record_scores', input: { ok: true } }] };
+        },
+      },
+    } as unknown as Anthropic;
+    const llm = new AnthropicClient('k', client);
+    const request = { model: 'claude-sonnet-5-5', system: 'sys', messages: [{ role: 'user' as const, content: 'q' }], tools: [{ name: 'record_scores', description: '', inputSchema: {} }], forceTool: 'record_scores', temperature: 0 };
+    const res = await llm.complete(request);
+    expect(res.toolCalls[0]!.name).toBe('record_scores');
+    expect(sent).toHaveLength(3);
+    expect(sent[2]!.tool_choice).toBeUndefined();
+    expect(sent[2]!.temperature).toBeUndefined();
+    expect(String(sent[2]!.system)).toContain('You MUST answer by calling the tool "record_scores"');
+    // Remembered: the next call goes straight to the supported form.
+    await llm.complete(request);
+    expect(sent).toHaveLength(4);
+  });
 });

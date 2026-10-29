@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - run: npm run typecheck
+      - run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose files are valid (CPU, GPU override, eval profile)
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.gpu.yml config --quiet
+          docker compose --profile eval config --quiet
+      - name: Build the runtime image
+        run: docker build --target runtime -t getnet-multi-agent:ci .
+      - name: Smoke the container (no LLM needed) and restart it
+        run: |
+          docker run -d --name api -p 3000:3000 getnet-multi-agent:ci
+          for i in $(seq 1 30); do curl -sf localhost:3000/health && break; sleep 2; done
+          token() { curl -sf -X POST localhost:3000/auth/token -H 'content-type: application/json' -d "{\"username\":\"$1\",\"password\":\"demo-$1\"}" | jq -r .access_token; }
+          MERCHANT=$(token cliente1988)
+          OPERATOR=$(token op.ana)
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/chat -H 'content-type: application/json' -d '{"message":"hi"}')" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/operator/handoffs -H "authorization: Bearer $MERCHANT")" = 403
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/operator/handoffs -H "authorization: Bearer $OPERATOR")" = 200
+          # /ready reports the missing LLM instead of pretending to be ready.
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/ready)" = 503
+          docker restart api
+          for i in $(seq 1 30); do curl -sf localhost:3000/health && break; sleep 2; done
+          # The generated signing key lives in the volume: tokens issued before the restart still work.
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/operator/handoffs -H "authorization: Bearer $OPERATOR")" = 200

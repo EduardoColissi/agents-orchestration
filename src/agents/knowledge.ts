@@ -2,10 +2,28 @@ import type { LLMClient } from '../llm/client.js';
 import type { Agent, AgentContext, AgentResult } from '../types.js';
 import { localDate } from '../support/dates.js';
 import { knowledgePrompt } from './prompts.js';
-import { runToolLoop, type AgentTool } from './toolLoop.js';
+import { dedupeSources, runToolLoop, type AgentTool } from './toolLoop.js';
 import { createWebSearchTool } from './webSearchTool.js';
+import { reportsOfflineTerminal } from '../orchestration/replanner.js';
+import { maskPII } from '../guardrails/pii.js';
+import type { Source, ToolEvidence } from '../types.js';
 
 const NOT_FOUND_MARKER = '<<NOT_FOUND>>';
+/** The troubleshooting guide for an offline machine, searched in code when Support reports one. */
+export const OFFLINE_GUIDE_QUERY = 'maquininha offline ou sem internet: como reiniciar e reconectar a máquina de cartão';
+
+/** Message as the agent sees it: unchanged for a fresh, self-contained message (v1 behaviour). */
+export function withConversation(ctx: AgentContext): string {
+  if (!ctx.history && ctx.query === ctx.message) return ctx.message;
+  const standalone = ctx.query !== ctx.message ? `
+<standalone_question>
+${ctx.query}
+</standalone_question>` : '';
+  return `${ctx.history ? `${ctx.history}
+` : ''}<merchant_message>
+${ctx.message}
+</merchant_message>${standalone}`;
+}
 
 export interface KnowledgeAgentOptions {
   model: string;
@@ -27,9 +45,13 @@ export class KnowledgeAgent implements Agent {
   async run(ctx: AgentContext): Promise<AgentResult> {
     const now = this.options.now?.() ?? new Date();
     const previous = ctx.previous.filter((p) => p.answer.trim());
+    // A structured account signal with a known guide is searched in code: given an offline machine,
+    // the 8B searched for "máquina de cartão online" and then answered that it found nothing.
+    const guide = ctx.previous.some(reportsOfflineTerminal) ? await this.search(OFFLINE_GUIDE_QUERY) : null;
+    const excerpts = guide && !guide.evidence.isError ? `\n\n<knowledge_base_excerpts query="${OFFLINE_GUIDE_QUERY}">\n${guide.content}\n</knowledge_base_excerpts>` : '';
     const userMessage = previous.length
-      ? `${ctx.message}\n\n<account_findings agent="support">\n${previous.map((p) => p.answer).join('\n\n')}\n</account_findings>`
-      : ctx.message;
+      ? `${withConversation(ctx)}\n\n<account_findings agent="support">\n${previous.map((p) => p.answer).join('\n\n')}\n</account_findings>${excerpts}`
+      : withConversation(ctx);
 
     // Providers without server-side search (Ollama) get a local DuckDuckGo tool instead.
     const serverSearch = this.llm.capabilities.serverWebSearch;
@@ -59,11 +81,22 @@ export class KnowledgeAgent implements Agent {
     return {
       agent: this.name,
       answer,
-      sources: result.sources,
-      toolsUsed: result.toolsUsed,
+      sources: guide && !notFound ? dedupeSources([...guide.sources, ...result.sources]) : result.sources,
+      toolsUsed: guide ? [...new Set(['search_knowledge_base', ...result.toolsUsed])] : result.toolsUsed,
       usage: result.usage,
+      evidence: guide ? [guide.evidence, ...result.evidence] : result.evidence,
       notFound,
       ...(result.hitIterationLimit || !answer ? { handoff: { reason: 'knowledge_agent_incomplete' } } : {}),
+    };
+  }
+
+  private async search(query: string): Promise<{ content: string; sources: Source[]; evidence: ToolEvidence }> {
+    const started = performance.now();
+    const out = await this.knowledgeBaseTool.execute({ query }).catch((err: Error) => ({ content: `Tool failed: ${err.message}`, isError: true, sources: [] }));
+    return {
+      content: out.content,
+      sources: out.sources ?? [],
+      evidence: { name: 'search_knowledge_base', input: { query }, output: maskPII(out.content).text.slice(0, 4000), isError: out.isError === true, durationMs: Math.round(performance.now() - started) },
     };
   }
 }

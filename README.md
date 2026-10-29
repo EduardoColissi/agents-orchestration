@@ -1,261 +1,323 @@
-# Getnet Multi-Agent Support System
+# Getnet Multi-Agent Support System — v2
 
-A multi-agent service that answers Getnet merchants: product questions grounded in Getnet's website (RAG), general questions via web search, and account-specific support using the merchant's own data. A Router decides which agent (or sequence of agents) handles each message; guardrails and a human-escalation agent cover what the system should not or cannot answer.
+A multi-agent API for Getnet merchants: a **Router** sends each message to a **Knowledge** agent (RAG over Getnet's site + web search) and/or a **Customer Support** agent (tools over the merchant's own data), with guardrails, persistent conversations, real authentication, an operational **human-in-the-loop** queue and a semantic evaluation that runs against the deployed API. It runs fully local and free by default (Ollama), on any machine, with one command.
 
-Built with **Spec-Driven Development**: [`docs/spec.md`](docs/spec.md) (what/why) → [`docs/plan.md`](docs/plan.md) (how) → [`docs/tasks.md`](docs/tasks.md) (verifiable steps). The acceptance criteria in the spec are the golden set used by the tests and the eval runner.
+v2 is a timed rebuild of [v1](https://github.com/EduardoColissi/agents-orchestration/tree/v1) driven by the reviewer's feedback. It keeps what was rated strong and closes the loops that were left open. Spec-Driven Development: [`docs/spec.md`](docs/spec.md) → [`docs/plan.md`](docs/plan.md) → [`docs/tasks.md`](docs/tasks.md), written and committed before the clock. **Build time: 39 min 41 s** (tags `v2-clock-start` → `v2-clock-end`, every commit listed in [`docs/timesheet.md`](docs/timesheet.md)).
 
-**Stack:** Node 22 · TypeScript (strict) · Fastify · zod · Anthropic SDK (Claude + server-side web search) · transformers.js (local multilingual embeddings) · cheerio · pino · Vitest · Docker.
+## What changed from v1
 
-Only one secret is needed: `ANTHROPIC_API_KEY` — or none at all with the **local profile**, which runs a free open model (Ollama + qwen2.5:7b) inside Docker.
+| Review gap | v2 | Where | Proof |
+|---|---|---|---|
+| **Memory** (1.0/10): every request was stateless | `conversation_id`; turns persisted in SQLite (survive restarts); the Router **and** the agents receive a rolling summary + the last 6 messages; follow-ups rewritten into `standalone_query`, which Knowledge searches with; deterministic compaction that keeps ids/amounts/dates verbatim; per-owner isolation | `src/chat/service.ts`, `src/memory/*`, `src/store/conversations.ts` | `tests/integration/memory.test.ts`, `context.test.ts`; eval cases MT1/MT2 |
+| **Authentication**: `user_id` in the body *was* the identity | JWT (HS256 pinned, `iss`/`aud`/`exp`) → principal → role check → tools bound to `sub`. `user_id` in the body is only an assertion: a mismatch is 403 before any LLM call. Another merchant's conversation is 404. Login rate limited, scrypt, audited | `src/auth/*`, `src/server.ts` | `tests/integration/auth.test.ts`; eval N4/N5 |
+| **Human-in-the-loop** (4.0/10): "handoff" opened a ticket and stopped | Agent interrupt → persistent queue → identified operator replies / approves / rejects → the agent resumes and finishes. Approval stops the tool loop **before** a sensitive action, checkpoints it and resumes from it. Compare-and-set on `version`, idempotent side effect, exactly-once delivery, TTL expiry, crash recovery at boot, append-only audit | `src/hitl/service.ts`, `src/store/handoffs.ts`, `src/agents/toolLoop.ts`, `src/agents/support.ts` | `tests/integration/hitl.test.ts`; eval H1/H2/H3 |
+| **Evaluation**: lexical checks; the one real run was gitignored | HTTP-only evaluation of the **deployed** API with a judge from another model family, reference facts fixed before the build, N runs with spread, calibration canaries, baseline gate, versioned reports. v1's real run is now versioned too | `eval/*` | `eval/reports/*`, `eval/baseline.json`, `eval/history/` |
+| **Replanning** | After each specialist, a deterministic policy reads tool signals and decides: add a step (offline machine without troubleshooting planned → Knowledge), hand over to a person (a support tool crashed), or finish without a person (live web data unavailable) | `src/orchestration/replanner.ts` | `tests/integration/replan.test.ts`; eval R1 |
+| **Production evidence** | `/ready` (DB, KB, LLM + models), GitHub Actions (typecheck, tests, compose validation, image build, container smoke with restart), Docker volume for state | `.github/workflows/ci.yml`, `src/container.ts` | CI; [`docs/evidence/restart.log`](docs/evidence/restart.log) (conversation, open handoff and token survive `docker compose restart`; the operator resolves after it), [`gpu.log`](docs/evidence/gpu.log), [`metrics.json`](docs/evidence/metrics.json) |
+| **AI observability** | Spans persisted per stage (router, agent, tool, RAG, personality) with duration, tokens and status; `GET /operator/metrics` → p50/p95/p99 per stage and per turn, tokens, error/escalation/blocked rates | `src/store/spans.ts` | `tests/integration/observability.test.ts` |
 
----
+Kept from v1 (rated strong): own orchestrator (no framework), multi-step plan with results passed forward, zod tools with the merchant bound by closure, bounded tool loop, deterministic input guardrail + PII masking + grounding check, the RAG pipeline (crawler with robots.txt, heading chunks, local multilingual e5, persisted index, URL diversity, RAG as a tool), deterministic escalation and — now on the local provider too — a **cheap router + stronger specialists** (`llama3.2:3b` routes, `llama3.1:8b` answers; Claude Haiku/Sonnet with `LLM_PROVIDER=anthropic`). The first commit of the clock imports v1 and says so.
 
 ## Quick start
 
-```bash
-cp .env.example .env              # add your ANTHROPIC_API_KEY
-npm install
-npm run ingest                    # crawl Getnet pages → data/index.json (≈1–2 min, first run downloads the embedding model)
-npm run dev                       # http://localhost:3000
-
-curl -s localhost:3000/chat -H 'content-type: application/json' \
-  -d '{"message":"Can I sell through WhatsApp using the Payment Link?","user_id":"cliente1988"}' | jq
-```
-
-### With Docker
+### Docker (any machine)
 
 ```bash
-cp .env.example .env              # add your ANTHROPIC_API_KEY
-npm install && npm run ingest     # build data/index.json on the host (or skip if it's already committed)
-docker compose up --build         # the embedding model is cached in the image at build time
+docker compose up --build                                                   # CPU: works everywhere, slower
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build   # NVIDIA GPU (WSL2 / Linux)
 ```
 
-### Without any API key (local LLM)
+No `.env` and no API key needed. The first `up` downloads `llama3.2:3b` and `llama3.1:8b` (~7 GB, cached in a volume); the API listens on `http://localhost:3000` (loopback only, because the demo credentials below are public; `API_BIND=0.0.0.0` exposes it). On a GPU machine you can put `COMPOSE_FILE=docker-compose.yml;docker-compose.gpu.yml` in `.env` (`:` instead of `;` on Linux/macOS). Already running Ollama on the host (e.g. macOS with Metal)? `COMPOSE_OLLAMA_URL=http://host.docker.internal:11434 docker compose up --build --no-deps api`. Claude instead of local models: `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` in `.env`.
 
 ```bash
-docker compose --profile local up --build
+docker compose ps                       # api: healthy
+curl -s localhost:3000/ready            # {"status":"ready","checks":{"database":…,"knowledge_base":…,"llm":…}}
 ```
 
-This starts three containers: `ollama` (model server), `ollama-pull` (downloads `qwen2.5:7b`, ~4.7 GB, once — cached in a volume) and `api-local` (this service with `LLM_PROVIDER=ollama`). Needs ~8 GB of free RAM; on CPU each request takes 20–60 s, and routing/tool-calling quality is below Claude's. Pick another model with `OLLAMA_MODEL=llama3.1:8b` (or `qwen2.5:3b` for small machines). The Anthropic server-side web search is replaced by a local DuckDuckGo tool, so the weather/exchange-rate scenarios still work. Same code, same tests: the provider is just another adapter behind `LLMClient`.
+The first chat turn after a start loads the models into memory (~30 s on a GPU, more on CPU); later turns take a few seconds. To start over without conversations, queue items or tickets, remove the state volume (`docker compose down && docker volume rm agents-orchestration_app-state`, prefixed with your checkout's folder name); `docker compose down -v` also deletes the downloaded models.
 
-To refresh the index from inside the container instead: `docker compose run --rm --user root api npm run ingest:prod` (writes to the mounted `./data`; on Linux the file ends up owned by root).
+### Configuration
 
-Commit `data/index.json` after ingesting: it is a snapshot, so the API (and the container) starts without network access to Getnet. Re-run ingestion to refresh it. Without an index the API still starts and logs a warning; Getnet questions then end in an honest "not found" + handoff.
+Everything is optional and listed in [`.env.example`](.env.example) (read from `.env`, by the API and by the evaluation). The ones you are most likely to change:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LLM_PROVIDER` | `ollama` | `ollama` (local, free) or `anthropic` |
+| `OLLAMA_ROUTER_MODEL` · `OLLAMA_AGENT_MODEL` | `llama3.2:3b` · `llama3.1:8b` | local router and specialists |
+| `ANTHROPIC_API_KEY` · `ROUTER_MODEL` · `AGENT_MODEL` | — · `claude-haiku-5-5` · `claude-sonnet-5-5` | Claude provider |
+| `AUTH_JWT_SECRET` · `AUTH_TOKEN_TTL_S` | generated once in the data volume · `3600` | token signing key and lifetime |
+| `HANDOFF_TTL_MINUTES` · `CHAT_RATE_LIMIT_PER_MIN` | `240` · `20` | approval expiry · chat turns per merchant per minute |
+| `PERSONALITY_ENABLED` · `EMBEDDER` | `false` · `e5` | brand-voice stage · `hashing` = offline embeddings |
+| `JUDGE_PROVIDER` · `JUDGE_MODEL` | `ollama` · `qwen2.5:7b` | evaluation judge (`anthropic` → `claude-sonnet-5-5`) |
+| `COMPOSE_FILE` · `API_BIND` · `COMPOSE_OLLAMA_URL` | — · `127.0.0.1` · `http://ollama:11434` | Docker Compose only |
+
+### Try it
+
+Demo identity provider (in production this is the company's OIDC provider):
+
+| User | Password | Role |
+|---|---|---|
+| `cliente1988` | `demo-cliente1988` | merchant (Padaria Pão Dourado, Get Smart offline) |
+| `cliente2000` | `demo-cliente2000` | merchant |
+| `ghost42` | `demo-ghost42` | merchant without a Getnet account |
+| `op.ana`, `op.bruno` | `demo-op.ana`, `demo-op.bruno` | operators |
+
+```bash
+login() { curl -s localhost:3000/auth/token -H 'content-type: application/json' -d "{\"username\":\"$1\",\"password\":\"demo-$1\"}" | jq -r .access_token; }
+M=$(login cliente1988); O=$(login op.ana)
+
+# Turn 1 starts a conversation…
+C=$(curl -s localhost:3000/chat -H "authorization: Bearer $M" -H 'content-type: application/json' \
+  -d '{"message":"Minha maquininha não conecta na internet"}' | tee /dev/stderr | jq -r .conversation_id)
+# …turn 2 is a follow-up that only makes sense with memory
+curl -s localhost:3000/chat -H "authorization: Bearer $M" -H 'content-type: application/json' \
+  -d "{\"message\":\"E como reinicio ela?\",\"conversation_id\":\"$C\"}" | jq '{route, answer, sources}'
+
+# Ask for a new machine: the agent proposes it, an operator must approve
+H=$(curl -s localhost:3000/chat -H "authorization: Bearer $M" -H 'content-type: application/json' \
+  -d "{\"message\":\"Quero trocar minha Get Smart GS-1988-0001 por uma nova\",\"conversation_id\":\"$C\"}" | jq -r .handoff.handoff_id)
+curl -s localhost:3000/operator/handoffs -H "authorization: Bearer $O" | jq '.items[] | {id, kind, request}'
+curl -s localhost:3000/operator/handoffs/$H/resolve -H "authorization: Bearer $O" -H 'content-type: application/json' \
+  -d '{"action":"approve","message":"Troca aprovada.","expected_version":1}' | jq .message
+curl -s localhost:3000/conversations/$C -H "authorization: Bearer $M" | jq '.messages[-1]'
+```
+
+The original contract still works: `{"message": "...", "user_id": "cliente1988"}` with the merchant's token (a different `user_id` is refused). The examples need bash and `jq` (macOS/Linux, or Git Bash/WSL on Windows). On Windows Git Bash, `curl -d` sends accented text in the console codepage; pipe the JSON with `--data-binary @-` to keep it UTF-8 (see [`scripts/restart-evidence.sh`](scripts/restart-evidence.sh), which also proves that a conversation, an open handoff and a token survive `docker compose restart api`).
+
+### UI
+
+The merchant chat and the operator console are in [agents-orchestration-UI](https://github.com/EduardoColissi/agents-orchestration-UI). With this API running: `npm ci && npm run dev` there, then open `http://localhost:3001` and pick a demo user. Sign in as the merchant in one browser window and as the operator in a private one (the session is a cookie): the merchant asks for a new machine, the operator sees the proposed action and its evidence and approves it, and the outcome appears in the merchant's chat.
+
+### Without Docker
+
+```bash
+npm ci                     # Node >= 24 (node:sqlite)
+ollama pull llama3.2:3b && ollama pull llama3.1:8b
+npm run dev                # http://localhost:3000, state in var/
+npm run ingest             # optional: rebuild data/index.json from the web
+```
 
 ### Tests and evaluation
 
 ```bash
-npm test          # unit + integration (no network, no API key: the LLM is a scripted fake)
+npm test                   # 162 tests, offline, scripted fake LLM, SQLite in memory (Node >= 24)
 npm run typecheck
-npm run eval      # golden set against the REAL model → scorecard + eval-report.json (needs the key and an index)
-EVAL_BASE_URL=http://localhost:3000 npm run eval   # same, against a running server/container
+npm run eval -- --runs 3   # semantic evaluation of the running API (EVAL_BASE_URL, default localhost:3000)
+npm run eval -- --runs 1 --only 3,5,MT1,R1,H2   # a few cases (partial runs skip the baseline gate)
+JUDGE_PROVIDER=anthropic npm run eval -- --rejudge eval/reports/<report>.json   # score the same answers with Claude
+docker compose --profile eval run --rm eval --runs 3     # same, using only Docker (repeat the -f files you started with, e.g. the GPU override)
 ```
 
-### Configuration
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `LLM_PROVIDER` | `anthropic` | `anthropic` (Claude API) or `ollama` (free local model) |
-| `ANTHROPIC_API_KEY` | — | Required for `anthropic` (a workspace key, `sk-ant-api03-…`) |
-| `ANTHROPIC_WORKSPACE_ID` | — | Only for organisation-level keys (`sk-ant-usr…`), which the API requires to name a workspace |
-| `OLLAMA_URL` / `OLLAMA_MODEL` | `http://localhost:11434` / `qwen2.5:7b` | For `ollama` (all roles use this one model) |
-| `ROUTER_MODEL` | `claude-haiku-5-5` | Cheap, fast classification |
-| `AGENT_MODEL` | `claude-sonnet-5-5` | Knowledge and Support agents |
-| `PERSONALITY_ENABLED` / `PERSONALITY_MODEL` | `true` / `claude-haiku-5-5` | Brand-voice stage on every answer |
-| `ROUTER_CONFIDENCE_THRESHOLD` | `0.6` | Below this, the request goes to a human |
-| `AGENT_MAX_ITERATIONS` | `5` | Tool-loop budget per agent |
-| `WEB_SEARCH_MAX_USES` | `2` | Cap on web searches per request (cost control) |
-| `EMBEDDER` | `e5` | `e5` = local `multilingual-e5-small`; `hashing` = offline lexical fallback |
-| `RETRIEVAL_TOP_K` / `RETRIEVAL_MIN_SCORE` | `6` / per-embedder | Retrieval tuning |
-| `PORT`, `LOG_LEVEL` | `3000`, `info` | |
-
----
+The evaluation logs in, holds multi-turn conversations, acts as the operator on the HITL cases and writes `eval/reports/<timestamp>.md` (+ `.json`). The full set (23 cases × 3 runs) takes about 15 minutes on a 12 GB GPU; the first run downloads the judge (`qwen2.5:7b`, ~4.7 GB). It exercises the human queue on purpose, so it leaves assist handoffs behind: run it after a demo, or reset the state volume afterwards.
 
 ## API
 
-`POST /chat`
+All routes except `/health`, `/ready` and `/auth/token` need `Authorization: Bearer <JWT>`. Errors: `{"error": "code", "details"?, "trace_id"?}`.
 
-```json
-{ "message": "When will the money from yesterday's sales be deposited?", "user_id": "cliente1988" }
-```
+| Route | Role | Purpose |
+|---|---|---|
+| `POST /auth/token` | public (5/min) | `{username, password}` → `{access_token, expires_in, sub, role}` |
+| `POST /chat` | merchant | `{message, user_id?, conversation_id?}` → answer |
+| `GET /conversations/:id` | merchant (owner) | messages + open handoff |
+| `GET /operator/handoffs?status=pending` | operator | FIFO queue |
+| `GET /operator/handoffs/:id` | operator | handoff + conversation context + proposed action |
+| `POST /operator/handoffs/:id/resolve` | operator | `{action: reply\|approve\|reject, message?, expected_version}` |
+| `GET /operator/conversations/:id` | operator | messages **with evidence** (tool outputs, excerpts, route decision) — audited |
+| `GET /operator/metrics` | operator | latency percentiles, tokens, error/escalation rates |
+| `GET /health` · `GET /ready` | public | liveness · readiness (DB, KB, LLM models) |
 
 ```json
 {
-  "trace_id": "3f0c…",
-  "answer": "Your card sales from Thursday, 2026-10-22 (BRL 481.40 gross) …",
-  "route": "support",
-  "agents": ["router", "support", "personality"],
-  "sources": [],
-  "tools_used": ["get_settlements"],
-  "handoff": { "required": false, "reason": null, "ticket_id": null },
-  "latency_ms": 4210
+  "trace_id": "6f1c…", "conversation_id": "0b8e…",
+  "answer": "…", "route": "support", "agents": ["router", "support", "knowledge"],
+  "sources": [{ "title": "…", "url": "…" }], "tools_used": ["get_terminal_status", "search_knowledge_base"],
+  "handoff": { "required": false, "reason": null, "ticket_id": null, "handoff_id": null, "kind": null, "status": null },
+  "replans": [{ "after": "support", "signal": "terminal_offline", "action": "add_knowledge" }],
+  "latency_ms": 8076
 }
 ```
-
-- `route`: `knowledge | support | escalation | blocked`
-- `agents`: agents that actually ran, in order (the plan)
-- `sources`: pages used to ground the answer (Getnet pages, internal docs or web results)
-- `handoff`: whether a human should take over, why, and the ticket id when one was opened
-- `400` for invalid payloads (with field errors), `500` only for unexpected bugs (with `trace_id`). `GET /health` → `{ status, knowledge_base_chunks }`.
-
-Mock customers: `cliente1988` (Get Smart, machine offline, declined transactions, D+1 settlement) and `cliente2000`. Any other `user_id` exercises the "account not found" path.
-
----
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    A[POST /chat] --> P[PII masking]
-    P --> G{Input guardrail}
-    G -- injection / other customer / harmful --> B[blocked reply]
-    G -- ok --> R[Router Agent<br/>Haiku · forced tool output]
-    R -- blocked --> B
-    R -- "human requested / confidence < 0.6 / invalid output" --> E[Escalation Agent<br/>deterministic · ticket]
-    R -- plan --> O[Orchestrator<br/>runs plan steps in sequence<br/>shared AgentContext]
-    O --> K[Knowledge Agent<br/>search_knowledge_base · web_search]
-    O --> S[Support Agent<br/>5 account tools bound to user_id]
+    T[POST /auth/token<br/>scrypt · rate limit] -.-> J[JWT]
+    A[POST /chat + Bearer JWT] --> AU[Auth: verify token → principal<br/>user_id assertion · role]
+    AU --> CS[Chat service: conversation owner check · lock<br/>context = summary + last 6 msgs + open handoff]
+    CS --> P[PII masking] --> G{Input guardrail}
+    G -- blocked --> B[blocked reply]
+    G -- ok --> R[Router · llama3.2:3b · constrained JSON<br/>route, plan, confidence, language, standalone_query]
+    R --> G2{Guardrail on standalone_query}
+    R -- "human / low confidence / invalid" --> E[Escalation · deterministic<br/>assist handoff]
+    G2 --> O[Plan executor + replanner]
+    O --> S[Support · llama3.1:8b<br/>tools bound to principal.sub]
+    O --> K[Knowledge · llama3.1:8b<br/>search_knowledge_base · web_search]
     S -- "previous results" --> K
-    K --> OG{Output guardrail}
-    S --> OG
-    OG -- "not found / agent can't finish" --> E
-    OG --> PS[Personality stage<br/>brand voice · facts verified]
-    E --> PS
-    B --> PS
-    PS --> RESP[JSON response + structured logs]
+    S -- "gated tool → checkpoint" --> AP[approval handoff]
+    K --> OG{Output guardrail} --> PS[Personality · optional]
+    E --> Q[(Handoff queue · SQLite)]
+    AP --> Q
+    Q --> OP[Operator: reply / approve / reject<br/>CAS on version]
+    OP -- "resume from checkpoint / operator message" --> CONV[(Conversation · exactly-once)]
+    PS --> CONV
 ```
 
-### Agents
+**Communication between agents:** direct async calls through the orchestrator (Mediator). Each agent implements `run(ctx) → AgentResult`; the context carries the masked message, the standalone question, the conversation history, the language, the results of earlier steps (`previous`) and the steps still to come (`nextSteps`). The human queue is the one asynchronous edge: it is persisted, so an agent run can stop, wait for a person and continue later — in another process if the API restarted.
 
-| Agent | What it does | How it uses the LLM |
+| Agent | Model (local / Claude) | Job |
 |---|---|---|
-| **Router** | Entry point. Classifies the message into a route, an execution **plan** (`["knowledge"]`, `["support"]` or `["support","knowledge"]`), a confidence and the language. | Claude Haiku with **forced tool use** (`route_decision`), whose input schema is generated from the same zod schema that validates the output. Invalid output → escalation (FR1). |
-| **Knowledge** | Getnet products/services (RAG) and general, time-sensitive questions (web). | Claude Sonnet in a tool loop with `search_knowledge_base` (our RAG, exposed as a tool so the model can reformulate the query in Portuguese and search again) and Anthropic's **server-side `web_search`** (capped). Must answer only from excerpts, or say it didn't find it (`<<NOT_FOUND>>`). |
-| **Customer Support** | The merchant's own account: settlements, transactions/declines, card-machine diagnostics, tickets. | Claude Sonnet in a tool loop with `get_customer_profile`, `get_settlements`, `get_transactions`, `get_terminal_status`, `create_support_ticket`. Tools are **bound to the authenticated `user_id` by the orchestrator** — the model never chooses whose data it reads (FR6). Unknown users are answered deterministically, without an LLM call. |
-| **Escalation** (bonus) | Human handoff: opens a ticket and tells the merchant what happens next. | No LLM, on purpose: handoff must work even when the LLM is down, and it must be predictable. |
-| **Personality** (diagram stage) | Gives every answer one brand voice before output, whichever agent (or fixed template) wrote it. | Claude Haiku rewrites tone only. Code extracts every amount, date, code and ticket id from the draft and keeps the original if any is missing from the rewrite, so the stage can never make an answer less accurate. `PERSONALITY_ENABLED=false` turns it off. |
+| Router | `llama3.2:3b` / Haiku | Route + plan + language + `standalone_query`, through a schema-constrained call (Ollama `format` = JSON Schema). Invalid output → escalation, never a guess. |
+| Knowledge | `llama3.1:8b` / Sonnet | Tool loop with RAG (`search_knowledge_base`) and web search; answers only from excerpts or says it did not find it. |
+| Customer Support | `llama3.1:8b` / Sonnet | Tool loop with `get_customer_profile`, `get_settlements`, `get_transactions`, `get_terminal_status`, `create_support_ticket` and the approval-gated `request_terminal_replacement`. |
+| Escalation | — | Deterministic: queues an `assist` handoff with a protocol id. |
+| Personality | Haiku | Brand voice, facts verified by code; off by default on local models. |
 
-**Communication mechanism:** direct async function calls through the `Orchestrator`. Every agent implements `run(ctx: AgentContext) → AgentResult`; the context carries `traceId`, `userId`, the masked message, the language, the results of earlier plan steps (`previous`) and the steps still to come (`nextSteps`). With 3–4 agents and linear plans this is the simplest design that is easy to test and to explain; the `Agent` interface would let the steps move to a queue later without touching the agents.
+### How the agents use LLM tools
 
-### Message workflow (scenario #5, multi-step)
+- **Router**: no tool loop, one call constrained to the `route_decision` schema (Ollama `format` = JSON Schema; a forced tool on Claude). The output is validated with zod; anything invalid becomes an escalation.
+- **Specialists**: a bounded tool loop (`AGENT_MAX_ITERATIONS`, default 5). The model calls tools, reads the results and answers; the last iteration offers no tools, so it has to answer. Tool inputs are zod schemas (also sent as JSON Schema to the model); invalid input comes back to the model as an error to correct, and the Ollama adapter coerces arguments that small models send as strings.
+- **Support tools** are built per request with the authenticated merchant bound by closure — `get_customer_profile`, `get_settlements`, `get_transactions`, `get_terminal_status`, `create_support_ticket` and the approval-gated `request_terminal_replacement` — so the model cannot choose whose data it reads. Their outputs do the work small models get wrong: decline codes come with meaning and action, and each settlement comes with its weekday and "today/tomorrow/yesterday" computed in code.
+- **Knowledge tools**: `search_knowledge_base` (RAG as a tool: the agent may search again with other words, up to 3 times) and `web_search` (server-side on Claude; a DuckDuckGo tool on Ollama). When Support's diagnostics show an offline machine, the troubleshooting guide is also searched in code and handed to the agent as excerpts (traced as a RAG span like any other search).
+- **Gated tool**: the loop stops before running `request_terminal_replacement` and returns a checkpoint (see Human-in-the-loop).
+- **Evidence**: every tool call is recorded with its input, masked output, duration and error flag — the operator reads it, the judge scores against it, and it becomes a span.
 
-1. *"My card machine won't connect to the internet, what should I do?"* → PII masking and input guardrail pass.
-2. Router → `{ route: "support", plan: ["support","knowledge"], confidence: 0.85, language: "en" }`.
-3. Support runs with `nextSteps=["knowledge"]`, so its prompt tells it to report only what the data shows. It calls `get_terminal_status` → "Get Smart GS-1988-0001 offline for 3h, NETWORK_UNREACHABLE".
-4. Knowledge runs with `previous=[support result]`; the findings are passed inside `<account_findings>`. It searches the KB (playbook + Getnet pages) and writes **one** final answer that starts from the account data and adds the steps.
-5. Output guardrail checks grounding; the Personality stage rewrites the tone (facts verified); response includes `agents: ["router","support","knowledge","personality"]`, both tools and the sources.
+## Memory
 
-### Design patterns
+Each turn is stored (PII-masked) with its evidence in one transaction. Before a turn, the chat service builds a `<conversation_context>` block — rolling summary + last 6 in-context messages + the open handoff — marked as untrusted data, and gives it to the Router **and** to the agents. The Router rewrites follow-ups into a self-contained question ("E como reinicio ela?" → "Como reiniciar a maquininha …?"); Knowledge searches with it, and the input guardrail runs on it too, so the rewrite cannot be used to smuggle an injection. A rewrite is only accepted when the conversation has history and it is in the message's language — the evaluation caught the 3B router copying its prompt example into single-turn messages, so this is enforced in code and checked on every single-turn eval case. Very short follow-ups keep the language of the previous message. Messages that leave the window are folded into the summary **without an LLM**: each becomes one line — its text truncated (160/200 chars) plus the ids, serials, amounts and dates found in it, copied verbatim — so the summary is lossy but cannot invent a value; the last 20 lines are kept. Blocked turns are kept for audit and never sent to an LLM again.
 
-**Architectural style — Hexagonal (Ports & Adapters).** The core (orchestrator + agents) depends only on ports: `LLMClient`, `CustomerRepository`, `VectorStore`, `Embedder`. Anthropic, the JSON mock, transformers.js and Fastify are adapters at the edges, wired in a single composition root.
+## Authentication and authorization
 
-| Pattern | Where | Why |
+`POST /auth/token` stands in for the identity provider: scrypt hashes, constant-time comparison (also for unknown users), rate limit, audit of every success and failure. Every other route verifies the token with the algorithm, issuer, audience and expiry pinned (`jose`). The **principal's `sub` is the only identity** that reaches the orchestrator; tools are built per request with it, so the model cannot choose whose data it reads. Roles separate merchants and operators. Resources of another owner answer 404. The signing key comes from `AUTH_JWT_SECRET` or is generated once and stored in the data volume. Production: OIDC/JWKS (`createRemoteJWKSet`) instead of the demo login.
+
+## Human-in-the-loop
+
+```
+pending ──resolve (CAS on version)──► resuming ──deliver (one transaction)──► completed
+pending ──TTL sweeper──► expired              (an expired approval never runs)
+resuming ──boot recovery──► completed         (same delivery, idempotent)
+```
+
+- **assist** (merchant asked for a human, low confidence, router failure, knowledge gap, agent failure): the operator's `reply` enters the conversation; the agents see it on the next turn. `reject` sends a template.
+- **approval**: `request_terminal_replacement` is gated. The tool loop stops **before** running it and returns a JSON checkpoint (system prompt, messages, pending call, sibling results, provider and model). `approve` runs the action once — the ticket id is derived from the handoff id and inserted with `INSERT OR IGNORE` — and the **same agent run continues from the checkpoint** with the result; `reject` continues it with the refusal. Tools are rebound to the conversation owner, never to the operator. A checkpoint from another provider/model gets a deterministic answer instead of being replayed.
+- One open handoff per conversation (partial unique index); the conversation keeps working meanwhile and the agents know about the open request.
+- Concurrency and failures: the second or stale resolve gets 409; the outcome message has a unique `handoff_id`, so delivery is exactly-once even if it runs twice; a crash between resolve and delivery is completed once at boot.
+- Every transition is in an append-only audit log (UPDATE/DELETE rejected by triggers).
+
+## Evaluation
+
+`npm run eval` is an HTTP client of the deployed API — it logs in, runs multi-turn conversations, acts as the operator on the HITL cases and reads each turn's evidence through the audited operator endpoint.
+
+- **Golden set** ([`eval/golden.json`](eval/golden.json)): the 10 challenge scenarios + Portuguese, multi-turn follow-ups, HITL assist/approve/reject, adversarial and authorization cases. **Reference facts were written before the build** (in the clock-start commit).
+- **Deterministic checks**: route, plan, tools, sources, handoff kind, standalone query, operator resolution, outcome content, no cross-merchant data.
+- **Judge**: `qwen2.5:7b` (another family than the Llama generator; Claude with `JUDGE_PROVIDER=anthropic`), schema-constrained, scores groundedness (against the evidence), correctness (against the reference facts), relevance and helpfulness 1–5, plus safety. The runner refuses a judge of the generator's family.
+- **Calibration**: 4 canaries with known defects must be caught, otherwise the report says `judge_unreliable`.
+- **Runs**: N per case (default 3) with mean and spread; two phases (generate, then judge) because generator and judge do not fit in 12 GB of VRAM together; latency p50/p95; gate against [`eval/baseline.json`](eval/baseline.json).
+
+### Results
+
+The full golden set (22 cases × 3 runs at the clock end; 23 with the replanning case later) against the Docker stack with GPU, each run scored by both judges with `--rejudge` on identical answers. Every report records the API build and the runner commit.
+
+**Deterministic checks** (judge-independent)
+
+| Check | Clock-end code (`v2-clock-end`) | Final code (`be33529`) |
 |---|---|---|
-| **Mediator** | `orchestrator.ts` | Agents never call each other; the orchestrator passes results forward through `AgentContext`. Low coupling between agents. |
-| **Strategy** | `Agent` (knowledge/support), `Embedder` (e5/hashing), `LLMClient` | Behaviour picked at runtime: by the Router's plan or by configuration. |
-| **Adapter** | `llm/anthropic.ts`, `llm/ollama.ts` | Each provider is one adapter behind `LLMClient`; `capabilities` tells agents what the provider lacks (e.g. no server-side search → local DuckDuckGo tool). |
-| **Repository** | `support/repository.ts`, `mockRepository.ts` | Data access isolated from tools; the mock becomes a real Getnet API by adding an implementation. |
-| **Factory** | `defineTool`, `createSupportTools`, `createKnowledgeBaseTool`, `createEmbedder` | `defineTool` builds a tool from one zod schema that produces the model-facing JSON Schema *and* validates the model's input. |
-| **Decorator** | `agents/support.ts` wraps `create_support_ticket` | Captures the ticket id without changing the tool. |
-| **Dependency Injection / Composition Root** | `container.ts` | The only place that knows concrete classes; tests inject the fake LLM and a fixed clock. |
-| **Test Double (Fake)** | `llm/fake.ts` | Whole pipeline tested offline, deterministically, for free. |
+| route · plan · tools | 1.0 · 1.0 · 1.0 | 1.0 · 1.0 · 1.0 |
+| follow-up rewrite · **no rewrite on single messages** | 1.0 · *(not checked)* | 1.0 · **1.0** |
+| replanning fired (case R1) | *(no case)* | **1.0** |
+| HITL: approval proposed · operator resolve · outcome delivered | 0.78 · 0.92 · 0.83 | **1.0 · 1.0 · 1.0** |
+| handoff as expected (live-data questions do not reach the queue) | 1.0 | 1.0 |
+| authorization (403 `user_mismatch`, 404 foreign conversation) · no cross-merchant data | 1.0 · 1.0 | 1.0 · 1.0 |
+| sources | 0.71 | 0.71 — only the two web cases: DuckDuckGo answers this network with a bot challenge |
+| latency p50 · p95 | 3.8 s · 19.1 s | 5.2 s · 19.1 s |
 
-**Agentic patterns** (vocabulary from Anthropic's *Building Effective Agents*): **Routing** (Router → specialist), **Plan-and-Execute / prompt chaining** (`support → knowledge` with output passed forward), **Orchestrator–Workers**, **Tool-use loop** with an iteration budget (`toolLoop.ts`), **Agentic RAG** (retrieval exposed as a tool), **Structured output via forced tool call**, **Layered guardrails**, **Human-in-the-loop** escalation, and **Fallback / graceful degradation** (invalid router output → escalation; no web search → RAG only).
+**Judges** (1–5, mean over the judged records; spread in the reports)
 
----
-
-## RAG pipeline
-
-**1. Ingestion** — `src/rag/ingest.ts`, `src/rag/crawler.ts`, seeds in [`data/sources.json`](data/sources.json)
-- Seeds: the two URLs from the challenge (`getnet.net`, `getnet.net/en`), the Brazilian Getnet site (`site.getnet.com.br`: machines, Pix, payment link, crediário, digital account, help center) and Santander's Getnet pages. `getnet.net` is the global corporate site; the Brazilian product content (Get Clássica, Get Smart, Pix, crediário…) lives on `site.getnet.com.br`, which is why it was added.
-- Breadth-first crawl, same host only, depth ≤ 2, ≤ 60 pages, URL keyword filter, robots.txt `Disallow` honoured, 300 ms between requests.
-- Cleaning with cheerio: drops nav/header/footer/scripts/forms, keeps headings as `## ` markers and deduplicates repeated blocks (menus repeated across the page).
-- Internal docs: Markdown files in `data/knowledge/` are ingested too. `support-playbook.md` is a **synthetic, clearly labelled** first-level support guide (connectivity steps, decline codes) — the public site has no troubleshooting content, and the challenge mentions internal sources.
-
-**2. Chunking & embedding**
-- Heading-aware chunker (`chunker.ts`): sections by heading, ~1,800 chars (~450 tokens) with 300-char overlap; the heading is prepended so each chunk stands alone.
-- Embeddings: `Xenova/multilingual-e5-small` (ONNX, local via transformers.js) with the `passage:` / `query:` prefixes e5 expects. Multilingual on purpose: the pages are in Portuguese and the questions in English.
-
-**3. Storage** — `vectorStore.ts`: in-memory cosine search behind a `VectorStore` interface, persisted as `data/index.json` (chunks, vectors, metadata, embedder id). A few hundred chunks don't justify a database; swapping to pgvector/LanceDB means implementing one interface. Loading an index built with a different embedder fails fast.
-
-**4. Retrieval** — `retriever.ts`: top-k = 6, model-specific similarity threshold, at most 2 chunks per URL (diversity).
-
-**5. Generation** — the Knowledge agent calls `search_knowledge_base` as a tool. Excerpts come back numbered with title and URL; the prompt requires answering only from them, treating them as data (prompt-injection defence) and declaring `<<NOT_FOUND>>` otherwise. Sources are attached to the response by the system, not typed by the model.
-
----
-
-## Guardrails and human handoff
-
-| Layer | What | Where |
+| Metric | qwen2.5:7b, local · clock-end / final | **Claude Sonnet, reference** · clock-end / final |
 |---|---|---|
-| PII | Card numbers (Luhn-checked), CPF, CNPJ and e-mails are masked **before** logs and before the LLM | `guardrails/pii.ts` |
-| Input | Prompt injection, references to another customer's id, clearly harmful requests (card cloning, laundering) → `blocked`, **no LLM call** | `guardrails/input.ts` |
-| Router | Second line: can return `blocked` (subtle cases) or `escalation` | `agents/router.ts` |
-| Data isolation | Support tools are created per request with the authenticated `user_id` | `support/tools.ts` |
-| Output | Knowledge answer with `<<NOT_FOUND>>` → handoff with ticket; answer without any source → disclaimer + `handoff.required` | `guardrails/output.ts` |
-| Reliability | Router failure, low confidence, agent exception or iteration limit → Escalation agent (HTTP 200 with a ticket, not a 500). Web search not enabled for the org → Knowledge retries without it, so RAG keeps working | `orchestrator.ts`, `agents/knowledge.ts` |
-| Cost | Web searches capped per agent run (not per API call), cheap router model | `agents/toolLoop.ts` |
-| Unknown account | Deterministic "account not found" + handoff **offer** (no ticket for a non-existent account) | `agents/support.ts` |
+| groundedness | 4.50 / 4.25 | **3.37 / 3.87** |
+| correctness (vs reference facts) | 4.62 / 4.45 | **2.87 / 3.28** |
+| relevance | 4.65 / 4.68 | **3.90 / 4.11** |
+| helpfulness | 4.48 / 4.50 | **2.80 / 2.96** |
+| safety pass rate | 0.85 / 0.77 | **1.0 / 1.0** |
+| canaries caught | 2/4 → `judge_unreliable` | **4/4** |
 
----
+How to read it:
+
+- **The canaries did their job.** The local 7B judge misses known defects, flags the merchant's *own* masked bank account as unsafe and inflates scores by about a point. Claude catches all four canaries without false safety alarms, so it is the reference: **`eval/baseline.json` comes from the Claude-judged final run**. The gate compares rubric scores only against a baseline from the same judge, and deterministic checks always (the gate caught a regression during the post-clock work: [handoff 0.905](eval/reports/2026-10-29T18-43-11-441Z.md), fixed in `be33529`).
+- **What changed between the two runs** comes from the post-clock fixes, all in the deterministic layer around the same models: the router no longer copies its prompt example into single messages (that was misrouting replacement requests and mixing languages), approval outcomes always state the decision and the ticket (HITL groundedness/correctness by Claude: 4.8 / 5.0), live-data questions no longer reach the human queue, and replanning now fires.
+- **What the reference judge still says:** account support is strong (groundedness 4.2), HITL outcomes are correct, but RAG answers on `llama3.1:8b` are often incomplete or wrong (correctness 2.9 — e.g. the Pix answer says no bank account is needed, the advance answer confuses *gravame*, the comparison omits the rental prices). That is the quality ceiling of the 8B on a 12 GB GPU, not of the pipeline; `LLM_PROVIDER=anthropic` runs the same pipeline on Claude.
+- Operator-written replies are checked deterministically but not judged (they are a person's text, not the system's output).
+
+Reports: clock-end [qwen](eval/reports/2026-10-29T16-37-18-256Z.md) / [Claude](eval/reports/2026-10-29T16-56-11-834Z.md) (its gate failure was the cross-judge comparison fixed in `0f872f7`) · final [qwen](eval/reports/2026-10-29T18-56-50-574Z.md) / [Claude = baseline](eval/reports/2026-10-29T19-00-39-798Z.md). Operational metrics: [`docs/evidence/metrics.json`](docs/evidence/metrics.json) (the escalation rate is high by design: a third of the golden set exercises the human queue).
+
+The development runs inside the clock ([`eval/reports/2026-10-29T16-1*`, `16-2*`](eval/reports)) found real model behaviours that unit tests with a fake LLM cannot: the 3B router labelling English as Portuguese, the 8B inventing a ticket number, wrapping or misnaming the serial of the gated tool, and proposing a replacement for a connectivity problem. Each became a fix with a test (plan §14). An independent re-evaluation after the clock found the router copying its own example — fixed and now checked on every single-turn case. v1's real run (Claude, 15/15 lexical) is in [`eval/history/`](eval/history).
 
 ## Observability
 
-Every request has a `trace_id` (also the Fastify request id) and produces one JSON log line per stage (`request`, `guardrail_input`, `router`, `agent`, `guardrail_output`, `response`) with latency, token usage, web searches, route, plan, confidence, tools and handoff reason:
+- Structured logs (pino) with `trace_id`, one line per stage (router decision, agent, tools, replan, HITL), no raw PII.
+- Spans in SQLite for every stage — router, each agent, each tool call (RAG separated), personality — with duration, tokens and status, plus one span per turn with route and handoff.
+- `GET /operator/metrics`: p50/p95/p99 per stage and per turn, tokens per stage, error rate, escalation rate, blocked rate.
+- `GET /operator/conversations/:id`: the evidence behind each answer (also what the judge reads).
+- `/health` (liveness) and `/ready` (database, knowledge base, LLM provider and models).
 
-```json
-{"level":30,"trace_id":"4a03…","user_id":"cliente1988","stage":"router","agent":"router","latency_ms":412,"route":"support","plan":["support","knowledge"],"confidence":0.85,"tokens":{"inputTokens":1204,"outputTokens":61,"webSearches":0}}
-```
+## RAG pipeline (unchanged from v1)
 
-**In production** these logs go to an OpenTelemetry collector / log pipeline, and the same fields drive:
-- **Dashboards:** requests by route, plan distribution, escalation rate by reason, blocked rate by category, p50/p95 latency per agent, tokens and web searches per request (cost), knowledge "not found" rate (content gaps).
-- **Alerts:** error/`agent_error` rate, escalation spike, p95 latency above the SLO, router fallback rate, cost per request.
-- **Quality loop:** escalated and `not_found` conversations are reviewed and added to `tests/eval/scenarios.json`; the eval runs on every prompt/model change with a route-accuracy gate (`EVAL_MIN_ROUTE_ACCURACY`, exits 1 below it). Prompts are versioned (`PROMPT_VERSION`).
-- Next steps: LLM-as-judge for groundedness/faithfulness on sampled traffic, tracing with Langfuse/LangSmith spans per tool call, user feedback (thumbs) in the response contract.
+1. **Ingestion** (`src/rag/ingest.ts`, `crawler.ts`, seeds in `data/sources.json`): `getnet.net`, `getnet.net/en`, `site.getnet.com.br` (where the Brazilian product content lives) and Santander's Getnet pages; breadth-first, same host, depth ≤ 2, ≤ 60 pages, robots.txt honoured; cheerio cleaning; plus a clearly labelled synthetic support playbook in `data/knowledge/`, in English and Portuguese (the agent searches in Portuguese). `npm run ingest -- --local-only` re-embeds the internal docs without crawling the web again.
+2. **Chunking & embedding**: heading-aware chunks (~1,800 chars, 300 overlap, heading prepended); `Xenova/multilingual-e5-small` locally with `passage:`/`query:` prefixes (Portuguese pages, questions in any language).
+3. **Storage**: in-memory cosine index behind a `VectorStore` interface, persisted as `data/index.json` (215 chunks); fails fast on an embedder mismatch.
+4. **Retrieval**: top-k 6, similarity threshold, ≤ 2 chunks per URL.
+5. **Generation**: RAG is a tool, so the agent can reformulate and search again; answers only from numbered excerpts, sources attached by the system.
 
----
+## Guardrails
+
+PII (cards with Luhn, CPF, CNPJ, e-mail) masked before logs, LLM and storage · deterministic input guardrail (injection, other customers' ids, harmful) on the message **and** on the rewritten question · Router can block · tools bound to the authenticated merchant · grounding check on Knowledge answers · approval gate on the only side-effect tool, which is offered only when the merchant asks for a new machine and never queued with invalid input · deterministic fallbacks when the LLM fails.
 
 ## Testing strategy
 
-| Level | Scope | How |
-|---|---|---|
-| **Unit** (`tests/unit`) | Tool loop, chunker, HTML extraction, retrieval ranking, index persistence and embedder mismatch, repository date logic (business days, relative dates), each support tool, cross-customer isolation, PII masking, guardrail patterns (true and false positives), plan normalisation | Vitest, no network |
-| **Integration** (`tests/integration`) | The full HTTP pipeline through Fastify `inject`, with a **scripted fake LLM per agent**: every spec scenario route (#1 RAG, #2 web, #3 settlements, #5 multi-step, #8 declines), tickets, N1–N4 negatives, router malformed output, low confidence, knowledge gap, ungrounded answer, LLM outage, PII never reaching the LLM, `/health` | The fake records every request, so tests assert on **what each agent sent to the model** (tool results, prompts, context passed between agents), not only on the final JSON |
-| **Evaluation** (`tests/eval`) | Golden set from the spec with the real model: route, plan, tool, sources, content and handoff checks; p50/p95 latency | `npm run eval`, scorecard + `eval-report.json`, CI gate on route accuracy |
-
-How to make integration testing comprehensive for the orchestration: test the **contracts between agents** (what the Router emits, what the orchestrator passes in `previous`/`nextSteps`, what each agent returns) with deterministic fakes; cover every edge of the workflow graph (each route, each escalation reason, each guardrail) as its own test; keep the real-model checks in the eval suite, which is non-deterministic and costs money, and run it on prompt/model changes and nightly rather than on every commit.
-
----
+- **Unit**: store (migrations, append-only audit, CAS, partial unique index), auth, compaction, Ollama adapter (`format`, argument coercion, written tool calls), tool loop (evidence, interrupt, invalid gated input, last iteration without tools), judge and report aggregation/gate.
+- **Integration** (Fastify `inject`, a fake LLM scripted per agent, SQLite in memory or on a temp file): the challenge scenarios, auth (401/403/429, zero LLM calls on refusals), memory (turn 2 sees turn 1 in the Router and agent prompts; restart; cross-user 404), HITL (assist, approve, reject, double resolve, expiry, crash recovery, checkpoint resume without re-running earlier tools), replanning, metrics.
+- **Live**: the evaluation above, against the container.
+- **CI**: typecheck, tests, compose validation, image build, container smoke including a restart.
 
 ## Design decisions and trade-offs
 
-- **Own orchestrator instead of LangGraph/LangChain:** 4 agents and linear plans don't need a graph framework; plain TypeScript is easier to test, debug and explain. The cost is re-implementing a small tool loop (`agents/toolLoop.ts`, ~60 lines).
-- **Router as forced tool call + zod:** structured output with schema validation, and a single schema source for the JSON Schema and the validator.
-- **Cheap router, stronger answering model:** most of the cost sits where quality matters.
-- **RAG as a tool, not pre-stuffed context:** the model decides the query (and translates it), can search twice, and skips retrieval for general questions.
-- **Local embeddings:** no second API key; multilingual e5 bridges EN questions and PT pages. Trade-off: a ~120 MB model download at build time.
-- **Deterministic escalation and unknown-user paths:** the most sensitive paths don't depend on the LLM.
-- **Stateless requests:** no conversation memory (non-goal in the spec); adding it means storing turns per `user_id` and passing them in `AgentContext`.
+- **No framework.** The loops the review asked for (checkpoint/resume, CAS, exactly-once) are ~300 lines that are easier to test and explain than a framework's abstractions.
+- **SQLite (`node:sqlite`)**: zero dependencies, WAL, one file in a volume. Single instance: the sweeper and recovery run in-process. Multi-replica needs Postgres with `SKIP LOCKED`.
+- **Resume from a checkpoint** instead of re-running the agent: the provider never changes mid-conversation, so the exact run can continue, without repeating earlier tool calls (5–15 s saved per resume on the 8B).
+- **The conversation is not paused** while a handoff is open: the interrupt belongs to the request; one open handoff per conversation.
+- **Deterministic where possible**: escalation, compaction, replanning, approval gating, language detection, templates. LLMs route, write and judge.
+- **Support → Knowledge answers are joined in code**: the account facts written by Support (the agent that read the tools), then the guidance written by Knowledge, which is told not to repeat them — asked to merge both, the 8B dropped the serial, the Wi-Fi and the 4G status. Sentences about tickets are removed from the facts when no ticket was opened in the turn (the 8B promised one, or quoted an invented number, without calling the tool). **A "not found" does not erase what was found**: when Knowledge found no guidance, Support's answer stands alone and nobody is queued. Testing the feedback's own example ("Minha maquininha está offline.") showed the opposite: "I couldn't find…" plus a needless handoff. Causes and fixes: the Portuguese search missed the English-only playbook (now bilingual), and the 8B searched for the wrong thing ("máquina de cartão online"), so an offline machine now brings its guide searched in code — the same structured signal the replanner uses.
+- **Local models need structure**: constrained decoding (`format`) for every structured output, argument coercion, and a constrained call to propose the replacement when the 8B does not.
 
-## Limitations
+## Limitations and next steps
 
-- Customer data is synthetic (`data/customers.json`), behind the `CustomerRepository` interface; settlement rules ignore bank holidays.
-- The crawler reads server-rendered HTML only; JS-rendered pages are reported as "too little text".
-- Sources list every retrieved page, not only the ones the model cited.
-- Tickets are in memory.
+- Demo identity provider (passwords in this README); production = OIDC/JWKS, refresh and revocation.
+- The local web search (DuckDuckGo HTML) is blocked by a bot challenge on some networks — the tool then reports live data as unavailable; with `LLM_PROVIDER=anthropic` the search runs server-side. A search API (Brave, Tavily) behind the same tool is the fix.
+- A handoff whose delivery fails 5 times stays in `resuming` and needs manual action (no retry endpoint yet).
+- Replacement intent is a heuristic (regex) in front of the operator gate; a structured `intent` from the Router would be more precise.
+- The 3B/8B models are slower and weaker than Claude; on CPU a turn takes 20–60 s.
+- The judge is a 7B model: canaries detect when it is unreliable, `JUDGE_PROVIDER=anthropic` gives a stronger one.
+- The [UI](https://github.com/EduardoColissi/agents-orchestration-UI) has a merchant chat and an operator console for the queue; there are no push notifications (the chat polls while a request is with a person).
+- The operator's `reply` is delivered as the answer; the agent picks the conversation up on the merchant's next message (it does not write a follow-up of its own).
+- `POST /chat` now requires a bearer token: the brief's example payload works unchanged once a token from `POST /auth/token` is sent.
+- RAG improvements suggested in the review (hybrid search, reranking, recall@k) were out of the 7 gaps.
 
 ## Project structure
 
 ```
 src/
-  main.ts  server.ts  container.ts  orchestrator.ts  config.ts  types.ts
-  agents/       router.ts knowledge.ts support.ts escalation.ts personality.ts toolLoop.ts defineTool.ts webSearchTool.ts prompts.ts
-  llm/          client.ts (interface) anthropic.ts ollama.ts fake.ts
-  rag/          ingest.ts crawler.ts chunker.ts embedder.ts vectorStore.ts retriever.ts
-  support/      repository.ts (interface) mockRepository.ts tools.ts dates.ts
-  guardrails/   input.ts output.ts pii.ts language.ts
-  observability/logger.ts
-data/           sources.json customers.json knowledge/ index.json
-tests/          unit/ integration/ eval/ helpers.ts
-docs/           spec.md plan.md tasks.md
+  auth/            jwt, credentials (scrypt), signing key, Fastify plugin + requireRole
+  chat/service.ts  one merchant turn: ownership, lock, context, persistence
+  memory/          context block, deterministic compaction
+  hitl/service.ts  queue, resolve (CAS), exactly-once delivery, sweeper, recovery
+  orchestration/   replanner
+  orchestrator.ts  guardrails → router → plan executor → handoffs → output
+  agents/          router, knowledge, support (checkpoint resume), escalation, personality, tool loop
+  llm/             LLMClient port; Ollama, Anthropic and fake adapters
+  store/           SQLite: db/migrations, conversations, handoffs, tickets, audit, spans
+  support/         customer repository (mock) and tools
+  rag/             crawler, chunker, embedder, vector store, retriever
+eval/              golden set, HTTP client, judge, report, runner, reports/, history/
+docs/              spec, plan, tasks, timesheet, challenge, evidence
+tests/             unit + integration (fake LLM)
 ```

@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { defineTool, json } from '../agents/defineTool.js';
 import type { AgentTool } from '../agents/toolLoop.js';
 import type { CustomerRepository } from './repository.js';
+import { localDate, relativeDay, weekdayName } from './dates.js';
 
 /** Standard ABECS response codes most often seen by merchants. */
 export const DECLINE_CODES: Record<string, { meaning: string; action: string }> = {
@@ -14,11 +16,17 @@ export const DECLINE_CODES: Record<string, { meaning: string; action: string }> 
   '91': { meaning: 'Issuer unavailable', action: 'Wait a few minutes and retry; if it persists, use another payment method.' },
 };
 
+/** Models often wrap the serial ("Get Smart GS-1988-0001"): match a value that contains one of the merchant's serials. */
+export function findTerminal<T extends { serial: string }>(terminals: T[], serial: string): T | undefined {
+  const wanted = serial.toUpperCase();
+  return terminals.find((t) => wanted === t.serial || wanted.includes(t.serial));
+}
+
 /**
  * Support tools bound to ONE customer. The user id comes from the orchestrator (the
  * authenticated request), never from the model, so cross-customer access is impossible (FR6).
  */
-export function createSupportTools(repo: CustomerRepository, userId: string): AgentTool[] {
+export function createSupportTools(repo: CustomerRepository, userId: string, now: () => Date = () => new Date()): AgentTool[] {
   return [
     defineTool(
       'get_customer_profile',
@@ -32,14 +40,19 @@ export function createSupportTools(repo: CustomerRepository, userId: string): Ag
 
     defineTool(
       'get_settlements',
-      'Get settlements (deposits of card/Pix sales into the bank account). Use sale_date to find when the sales of a given day will be/were deposited. Without sale_date, returns upcoming settlements. Amounts are gross (before fees).',
+      'Get settlements (deposits of card/Pix sales into the bank account). Use sale_date to find when the sales of a given day will be/were deposited. Without sale_date, returns upcoming settlements. Amounts are gross (before fees). `summary` states what was already deposited and what is still to come, with the day: rely on it.',
       z.object({
         sale_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Sales date in YYYY-MM-DD'),
       }),
       async ({ sale_date }) => {
-        const settlements = await repo.getSettlements(userId, sale_date ? { saleDate: sale_date } : { upcomingOnly: true });
+        const today = localDate(now());
+        const day = (date: string) => `${weekdayName(date)} ${date}, ${relativeDay(date, today)}`;
+        const settlements = (await repo.getSettlements(userId, sale_date ? { saleDate: sale_date } : { upcomingOnly: true }))
+          .map((s) => ({ ...s, saleDay: day(s.saleDate), expectedDay: day(s.expectedDate) }));
         const total = settlements.reduce((sum, s) => sum + s.grossAmount, 0);
-        return { content: json({ sale_date: sale_date ?? null, settlements, total_gross_amount: Math.round(total * 100) / 100 }) };
+        // Written in code: with only dates and statuses, the 8B still said "all deposited today".
+        const summary = settlements.map((s) => `${s.method} ${s.grossAmount.toFixed(2)}: ${s.status === 'paid' ? 'already deposited on' : 'to be deposited on'} ${s.expectedDay}`);
+        return { content: json({ sale_date: sale_date ?? null, summary, settlements, total_gross_amount: Math.round(total * 100) / 100 }) };
       },
     ),
 
@@ -75,6 +88,26 @@ export function createSupportTools(repo: CustomerRepository, userId: string): Ag
         const ticket = await repo.createTicket({ userId, category, summary });
         return { content: json({ ticket_id: ticket.id, status: ticket.status }) };
       },
+    ),
+
+    defineTool(
+      'request_terminal_replacement',
+      "Request a replacement card machine for one of the merchant's terminals. Use ONLY when the merchant asks to replace/exchange the machine. A human specialist must approve it before it happens: never tell the merchant it was approved.",
+      z.object({
+        serial: z.string().min(3).max(40).describe('Serial of the merchant terminal to replace (from get_terminal_status)'),
+        reason: z.string().min(5).max(300).describe('Why it should be replaced, based on the diagnostics'),
+      }),
+      async ({ serial, reason }, { idempotencyKey }) => {
+        const terminal = findTerminal(await repo.getTerminals(userId), serial);
+        if (!terminal) return { content: json({ error: 'terminal_not_found', serial }), isError: true };
+        // The approval (handoff) id makes the side effect idempotent: approved twice, created once.
+        const id = idempotencyKey ? `TCK-${createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 12).toUpperCase()}` : undefined;
+        const ticket = await repo.createTicket({ ...(id ? { id } : {}), userId, category: 'terminal_replacement', summary: `Replace ${terminal.serial}: ${reason}` });
+        // INSERT OR IGNORE returns the stored row: never report someone else's ticket as ours.
+        if (ticket.userId !== userId || ticket.category !== 'terminal_replacement') return { content: json({ error: 'ticket_id_conflict' }), isError: true };
+        return { content: json({ ticket_id: ticket.id, status: ticket.status, serial: terminal.serial }) };
+      },
+      { requiresApproval: true },
     ),
   ];
 }
