@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { MockCustomerRepository } from '../../src/support/mockRepository.js';
 import { createSupportTools } from '../../src/support/tools.js';
-import { addBusinessDays } from '../../src/support/dates.js';
+import { addBusinessDays, relativeDay } from '../../src/support/dates.js';
 
 const data = JSON.parse(readFileSync('data/customers.json', 'utf8'));
 // Friday 2026-10-23, 12:00 in São Paulo.
@@ -10,13 +10,21 @@ const now = () => new Date('2026-10-23T15:00:00Z');
 const repo = () => new MockCustomerRepository(data, now);
 
 const toolMap = (r: MockCustomerRepository, userId: string) =>
-  Object.fromEntries(createSupportTools(r, userId).map((t) => [t.spec.name, t]));
+  Object.fromEntries(createSupportTools(r, userId, now).map((t) => [t.spec.name, t]));
 
 describe('dates', () => {
   it('skips weekends when adding business days', () => {
     expect(addBusinessDays('2026-10-23', 1)).toBe('2026-10-26'); // Fri -> Mon
     expect(addBusinessDays('2026-10-22', 1)).toBe('2026-10-23'); // Thu -> Fri
     expect(addBusinessDays('2026-10-22', 0)).toBe('2026-10-22');
+  });
+
+  it('names a date relative to today', () => {
+    expect(relativeDay('2026-10-23', '2026-10-23')).toBe('today');
+    expect(relativeDay('2026-10-24', '2026-10-23')).toBe('tomorrow');
+    expect(relativeDay('2026-10-22', '2026-10-23')).toBe('yesterday');
+    expect(relativeDay('2026-10-26', '2026-10-23')).toBe('in 3 days');
+    expect(relativeDay('2026-10-20', '2026-10-23')).toBe('3 days ago');
   });
 });
 
@@ -66,6 +74,12 @@ describe('support tools', () => {
     // Even if the model tries to pass another user id, the schema ignores it and the bound id is used.
     const out = await tools.get_customer_profile!.execute({ user_id: 'cliente2000' });
     expect(JSON.parse(out.content).userId).toBe('cliente1988');
+  });
+
+  it('labels settlement days relative to today in code, so the model does not swap today and tomorrow', async () => {
+    const out = await toolMap(repo(), 'cliente1988').get_settlements!.execute({ sale_date: '2026-10-22' });
+    const days = Object.fromEntries(JSON.parse(out.content).settlements.map((s: { method: string; expectedDay: string }) => [s.method, s.expectedDay]));
+    expect(days).toEqual({ debit: 'Friday 2026-10-23, today', credit: 'Friday 2026-10-23, today', pix: 'Thursday 2026-10-22, yesterday' });
   });
 
   it('rejects invalid input instead of throwing', async () => {

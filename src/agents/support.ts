@@ -106,7 +106,7 @@ export class SupportAgent implements Agent, ApprovalResumer {
 
     let ticketId: string | undefined;
     const wantsReplacement = wantsMachineReplacement(`${ctx.message} ${ctx.query}`);
-    const tools = createSupportTools(this.repo, ctx.userId).filter((t) => wantsReplacement || !t.requiresApproval).map((tool): AgentTool =>
+    const tools = createSupportTools(this.repo, ctx.userId, this.options.now).filter((t) => wantsReplacement || !t.requiresApproval).map((tool): AgentTool =>
       tool.spec.name !== 'create_support_ticket'
         ? tool
         : {
@@ -187,7 +187,7 @@ export class SupportAgent implements Agent, ApprovalResumer {
    */
   async resume(handoff: Handoff, decision: { approved: boolean; note?: string }): Promise<{ content: string; evidence: ToolEvidence[] }> {
     const checkpoint = handoff.checkpoint as ApprovalCheckpoint;
-    const tools = createSupportTools(this.repo, handoff.ownerId);
+    const tools = createSupportTools(this.repo, handoff.ownerId, this.options.now);
     const language = checkpoint.language;
     const note = decision.note ?? '';
 

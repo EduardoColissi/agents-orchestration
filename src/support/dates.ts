@@ -30,6 +30,15 @@ export function addBusinessDays(date: string, days: number): string {
   return current;
 }
 
+/** "today", "tomorrow", "yesterday", "in 3 days", "2 days ago": small models misread ISO dates against "today". */
+export function relativeDay(date: string, today: string): string {
+  const diff = Math.round((Date.parse(`${date}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86_400_000);
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'tomorrow';
+  if (diff === -1) return 'yesterday';
+  return diff > 1 ? `in ${diff} days` : `${-diff} days ago`;
+}
+
 export function weekdayName(date: string): string {
   return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
 }

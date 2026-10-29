@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { defineTool, json } from '../agents/defineTool.js';
 import type { AgentTool } from '../agents/toolLoop.js';
 import type { CustomerRepository } from './repository.js';
+import { localDate, relativeDay, weekdayName } from './dates.js';
 
 /** Standard ABECS response codes most often seen by merchants. */
 export const DECLINE_CODES: Record<string, { meaning: string; action: string }> = {
@@ -25,7 +26,7 @@ export function findTerminal<T extends { serial: string }>(terminals: T[], seria
  * Support tools bound to ONE customer. The user id comes from the orchestrator (the
  * authenticated request), never from the model, so cross-customer access is impossible (FR6).
  */
-export function createSupportTools(repo: CustomerRepository, userId: string): AgentTool[] {
+export function createSupportTools(repo: CustomerRepository, userId: string, now: () => Date = () => new Date()): AgentTool[] {
   return [
     defineTool(
       'get_customer_profile',
@@ -39,12 +40,15 @@ export function createSupportTools(repo: CustomerRepository, userId: string): Ag
 
     defineTool(
       'get_settlements',
-      'Get settlements (deposits of card/Pix sales into the bank account). Use sale_date to find when the sales of a given day will be/were deposited. Without sale_date, returns upcoming settlements. Amounts are gross (before fees).',
+      'Get settlements (deposits of card/Pix sales into the bank account). Use sale_date to find when the sales of a given day will be/were deposited. Without sale_date, returns upcoming settlements. Amounts are gross (before fees). Each settlement has expectedDay ("Thursday 2026-10-29, today"): use it as written.',
       z.object({
         sale_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Sales date in YYYY-MM-DD'),
       }),
       async ({ sale_date }) => {
-        const settlements = await repo.getSettlements(userId, sale_date ? { saleDate: sale_date } : { upcomingOnly: true });
+        const today = localDate(now());
+        const day = (date: string) => `${weekdayName(date)} ${date}, ${relativeDay(date, today)}`;
+        const settlements = (await repo.getSettlements(userId, sale_date ? { saleDate: sale_date } : { upcomingOnly: true }))
+          .map((s) => ({ ...s, saleDay: day(s.saleDate), expectedDay: day(s.expectedDate) }));
         const total = settlements.reduce((sum, s) => sum + s.grossAmount, 0);
         return { content: json({ sale_date: sale_date ?? null, settlements, total_gross_amount: Math.round(total * 100) / 100 }) };
       },
