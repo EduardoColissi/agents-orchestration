@@ -1,0 +1,84 @@
+# Runs on any machine (CPU):          docker compose up --build
+# With an NVIDIA GPU (much faster):   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#                                     (or COMPOSE_FILE=docker-compose.yml;docker-compose.gpu.yml in .env — ':' on Linux/macOS)
+# Ollama already running on the host (e.g. macOS with Metal):
+#                                     COMPOSE_OLLAMA_URL=http://host.docker.internal:11434 docker compose up --build --no-deps api
+# Claude instead of local models:     LLM_PROVIDER=anthropic + ANTHROPIC_API_KEY in .env, then docker compose up --build --no-deps api
+# Evaluation against the running API: docker compose --profile eval run --rm eval --runs 3
+services:
+  ollama:
+    image: ollama/ollama:0.40.11
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: 30m
+      # Router (3B) + agents (8B) stay loaded together; the judge loads in its own phase.
+      OLLAMA_MAX_LOADED_MODELS: "2"
+      OLLAMA_NUM_PARALLEL: "1"
+    ports:
+      - "127.0.0.1:11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # One-shot: downloads the router and agent models on the first `up` (cached in the volume).
+  ollama-pull:
+    image: ollama/ollama:0.40.11
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["sh", "-c", "ollama pull ${OLLAMA_ROUTER_MODEL:-llama3.2:3b} && ollama pull ${OLLAMA_AGENT_MODEL:-llama3.1:8b}"]
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: runtime
+    image: getnet-multi-agent:2
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: 3000
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_URL: ${COMPOSE_OLLAMA_URL:-http://ollama:11434}
+      DB_PATH: /app/var/app.db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Conversations, handoffs, tickets, audit log and the generated JWT key survive restarts.
+      - app-state:/app/var
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  eval:
+    profiles: ["eval"]
+    build:
+      context: .
+      target: eval
+    image: getnet-multi-agent-eval:2
+    environment:
+      EVAL_BASE_URL: http://api:3000
+      JUDGE_PROVIDER: ${JUDGE_PROVIDER:-ollama}
+      JUDGE_MODEL: ${JUDGE_MODEL:-qwen2.5:7b}
+      JUDGE_OLLAMA_URL: ${COMPOSE_OLLAMA_URL:-http://ollama:11434}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      # Reports are written back to the repository (eval/reports, eval/baseline.json).
+      - ./eval:/app/eval
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  ollama-models:
+  app-state:
