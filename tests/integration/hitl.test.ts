@@ -272,4 +272,20 @@ describe('approval proposals are checked against the merchant data', () => {
     expect(t.deps.handoffs.list()).toHaveLength(0);
   });
 });
+
+describe('replacement proposal after a failed attempt', () => {
+  it('still proposes the replacement when the model first called the tool with invalid input and gave up', async () => {
+    const llm = scriptedLLM({
+      router: [route({ route: 'support', plan: ['support'], language: 'pt' })],
+      support: [
+        { toolCalls: [{ name: 'request_terminal_replacement', input: { terminal_id: 'GS-1988-0001' } }] },
+        { text: 'Não consegui pedir a troca.' },
+        { toolCalls: [{ name: 'request_terminal_replacement', input: { serial: 'GS-1988-0001', reason: 'offline for days' } }] },
+      ],
+    });
+    const t = await buildTestApp(llm);
+    const body = await chat(t, 'Minha Get Smart GS-1988-0001 está offline faz dias, quero trocar por uma nova');
+    expect(body.handoff).toMatchObject({ kind: 'approval', status: 'pending' });
+  });
+});
 });

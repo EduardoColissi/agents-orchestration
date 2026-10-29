@@ -132,9 +132,10 @@ export class SupportAgent implements Agent, ApprovalResumer {
 
     // The merchant explicitly asked for a new machine but the model answered without proposing it
     // (llama3.1:8b does this often): one schema-constrained call proposes it, still gated by an operator.
-    if (!result.interrupt && wantsReplacement && !result.toolsUsed.includes('request_terminal_replacement')) {
+    // (Also when the model tried the tool with invalid input and then gave up.)
+    if (!result.interrupt && wantsReplacement) {
       const forced = await this.proposeReplacement(system, result, tools);
-      if (forced) result = { ...result, interrupt: forced, toolsUsed: [...result.toolsUsed, forced.pendingCall.name] };
+      if (forced) result = { ...result, interrupt: forced, toolsUsed: [...new Set([...result.toolsUsed, forced.pendingCall.name])] };
     }
 
     const base = { agent: this.name, sources: [], toolsUsed: result.toolsUsed, usage: result.usage, evidence: result.evidence };

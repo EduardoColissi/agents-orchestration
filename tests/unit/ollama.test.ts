@@ -103,4 +103,12 @@ describe('local web search tool', () => {
     expect(out.sources?.[0]).toEqual({ title: 'Cotação do euro hoje', url: 'https://example.com/cambio' });
     expect((await tool.execute({ query: 'again' })).isError).toBe(true);
   });
+
+describe('web search provider blocking', () => {
+  it('reports a bot challenge as unavailable, not as an empty result', async () => {
+    const blocked = (async () => new Response('<div class="anomaly-modal">Unfortunately, bots use DuckDuckGo too.</div>', { status: 202 })) as unknown as typeof fetch;
+    const { searchDuckDuckGo } = await import('../../src/agents/webSearchTool.js');
+    await expect(searchDuckDuckGo('euro', blocked)).rejects.toThrow(/live web data is unavailable/);
+  });
+});
 });
