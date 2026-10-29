@@ -29,6 +29,28 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build   # NV
 
 No `.env` and no API key needed. The first `up` downloads `llama3.2:3b` and `llama3.1:8b` (~7 GB, cached in a volume); the API listens on `http://localhost:3000` (loopback only, because the demo credentials below are public; `API_BIND=0.0.0.0` exposes it). On a GPU machine you can put `COMPOSE_FILE=docker-compose.yml;docker-compose.gpu.yml` in `.env` (`:` instead of `;` on Linux/macOS). Already running Ollama on the host (e.g. macOS with Metal)? `COMPOSE_OLLAMA_URL=http://host.docker.internal:11434 docker compose up --build --no-deps api`. Claude instead of local models: `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` in `.env`.
 
+```bash
+docker compose ps                       # api: healthy
+curl -s localhost:3000/ready            # {"status":"ready","checks":{"database":…,"knowledge_base":…,"llm":…}}
+```
+
+The first chat turn after a start loads the models into memory (~30 s on a GPU, more on CPU); later turns take a few seconds. To start over without conversations, queue items or tickets, remove the state volume (`docker compose down && docker volume rm agents-orchestration_app-state`, prefixed with your checkout's folder name); `docker compose down -v` also deletes the downloaded models.
+
+### Configuration
+
+Everything is optional and listed in [`.env.example`](.env.example) (read from `.env`, by the API and by the evaluation). The ones you are most likely to change:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LLM_PROVIDER` | `ollama` | `ollama` (local, free) or `anthropic` |
+| `OLLAMA_ROUTER_MODEL` · `OLLAMA_AGENT_MODEL` | `llama3.2:3b` · `llama3.1:8b` | local router and specialists |
+| `ANTHROPIC_API_KEY` · `ROUTER_MODEL` · `AGENT_MODEL` | — · `claude-haiku-5-5` · `claude-sonnet-5-5` | Claude provider |
+| `AUTH_JWT_SECRET` · `AUTH_TOKEN_TTL_S` | generated once in the data volume · `3600` | token signing key and lifetime |
+| `HANDOFF_TTL_MINUTES` · `CHAT_RATE_LIMIT_PER_MIN` | `240` · `20` | approval expiry · chat turns per merchant per minute |
+| `PERSONALITY_ENABLED` · `EMBEDDER` | `false` · `e5` | brand-voice stage · `hashing` = offline embeddings |
+| `JUDGE_PROVIDER` · `JUDGE_MODEL` | `ollama` · `qwen2.5:7b` | evaluation judge (`anthropic` → `claude-sonnet-5-5`) |
+| `COMPOSE_FILE` · `API_BIND` · `COMPOSE_OLLAMA_URL` | — · `127.0.0.1` · `http://ollama:11434` | Docker Compose only |
+
 ### Try it
 
 Demo identity provider (in production this is the company's OIDC provider):
@@ -60,7 +82,11 @@ curl -s localhost:3000/operator/handoffs/$H/resolve -H "authorization: Bearer $O
 curl -s localhost:3000/conversations/$C -H "authorization: Bearer $M" | jq '.messages[-1]'
 ```
 
-The original contract still works: `{"message": "...", "user_id": "cliente1988"}` with the merchant's token (a different `user_id` is refused). On Windows Git Bash, `curl -d` sends accented text in the console codepage; pipe the JSON with `--data-binary @-` to keep it UTF-8 (see [`scripts/restart-evidence.sh`](scripts/restart-evidence.sh)).
+The original contract still works: `{"message": "...", "user_id": "cliente1988"}` with the merchant's token (a different `user_id` is refused). The examples need bash and `jq` (macOS/Linux, or Git Bash/WSL on Windows). On Windows Git Bash, `curl -d` sends accented text in the console codepage; pipe the JSON with `--data-binary @-` to keep it UTF-8 (see [`scripts/restart-evidence.sh`](scripts/restart-evidence.sh), which also proves that a conversation, an open handoff and a token survive `docker compose restart api`).
+
+### UI
+
+The merchant chat and the operator console are in [agents-orchestration-UI](https://github.com/EduardoColissi/agents-orchestration-UI). With this API running: `npm ci && npm run dev` there, then open `http://localhost:3001` and pick a demo user. Sign in as the merchant in one browser window and as the operator in a private one (the session is a cookie): the merchant asks for a new machine, the operator sees the proposed action and its evidence and approves it, and the outcome appears in the merchant's chat.
 
 ### Without Docker
 
@@ -74,11 +100,15 @@ npm run ingest             # optional: rebuild data/index.json from the web
 ### Tests and evaluation
 
 ```bash
-npm test                   # 153 tests, offline, scripted fake LLM, SQLite in memory
+npm test                   # 159 tests, offline, scripted fake LLM, SQLite in memory (Node >= 24)
 npm run typecheck
 npm run eval -- --runs 3   # semantic evaluation of the running API (EVAL_BASE_URL, default localhost:3000)
-docker compose --profile eval run --rm eval --runs 3     # same, using only Docker
+npm run eval -- --runs 1 --only 3,5,MT1,R1,H2   # a few cases (partial runs skip the baseline gate)
+JUDGE_PROVIDER=anthropic npm run eval -- --rejudge eval/reports/<report>.json   # score the same answers with Claude
+docker compose --profile eval run --rm eval --runs 3     # same, using only Docker (repeat the -f files you started with, e.g. the GPU override)
 ```
+
+The evaluation logs in, holds multi-turn conversations, acts as the operator on the HITL cases and writes `eval/reports/<timestamp>.md` (+ `.json`). The full set (23 cases × 3 runs) takes about 15 minutes on a 12 GB GPU; the first run downloads the judge (`qwen2.5:7b`, ~4.7 GB). It exercises the human queue on purpose, so it leaves assist handoffs behind: run it after a demo, or reset the state volume afterwards.
 
 ## API
 
@@ -141,6 +171,15 @@ flowchart TD
 | Customer Support | `llama3.1:8b` / Sonnet | Tool loop with `get_customer_profile`, `get_settlements`, `get_transactions`, `get_terminal_status`, `create_support_ticket` and the approval-gated `request_terminal_replacement`. |
 | Escalation | — | Deterministic: queues an `assist` handoff with a protocol id. |
 | Personality | Haiku | Brand voice, facts verified by code; off by default on local models. |
+
+### How the agents use LLM tools
+
+- **Router**: no tool loop, one call constrained to the `route_decision` schema (Ollama `format` = JSON Schema; a forced tool on Claude). The output is validated with zod; anything invalid becomes an escalation.
+- **Specialists**: a bounded tool loop (`AGENT_MAX_ITERATIONS`, default 5). The model calls tools, reads the results and answers; the last iteration offers no tools, so it has to answer. Tool inputs are zod schemas (also sent as JSON Schema to the model); invalid input comes back to the model as an error to correct, and the Ollama adapter coerces arguments that small models send as strings.
+- **Support tools** are built per request with the authenticated merchant bound by closure — `get_customer_profile`, `get_settlements`, `get_transactions`, `get_terminal_status`, `create_support_ticket` and the approval-gated `request_terminal_replacement` — so the model cannot choose whose data it reads. Their outputs do the work small models get wrong: decline codes come with meaning and action, and each settlement comes with its weekday and "today/tomorrow/yesterday" computed in code.
+- **Knowledge tools**: `search_knowledge_base` (RAG as a tool: the agent may search again with other words, up to 3 times) and `web_search` (server-side on Claude; a DuckDuckGo tool on Ollama).
+- **Gated tool**: the loop stops before running `request_terminal_replacement` and returns a checkpoint (see Human-in-the-loop).
+- **Evidence**: every tool call is recorded with its input, masked output, duration and error flag — the operator reads it, the judge scores against it, and it becomes a span.
 
 ## Memory
 
@@ -223,9 +262,9 @@ The development runs inside the clock ([`eval/reports/2026-10-29T16-1*`, `16-2*`
 
 ## RAG pipeline (unchanged from v1)
 
-1. **Ingestion** (`src/rag/ingest.ts`, `crawler.ts`, seeds in `data/sources.json`): `getnet.net`, `getnet.net/en`, `site.getnet.com.br` (where the Brazilian product content lives) and Santander's Getnet pages; breadth-first, same host, depth ≤ 2, ≤ 60 pages, robots.txt honoured; cheerio cleaning; plus a clearly labelled synthetic support playbook in `data/knowledge/`.
+1. **Ingestion** (`src/rag/ingest.ts`, `crawler.ts`, seeds in `data/sources.json`): `getnet.net`, `getnet.net/en`, `site.getnet.com.br` (where the Brazilian product content lives) and Santander's Getnet pages; breadth-first, same host, depth ≤ 2, ≤ 60 pages, robots.txt honoured; cheerio cleaning; plus a clearly labelled synthetic support playbook in `data/knowledge/`, in English and Portuguese (the agent searches in Portuguese). `npm run ingest -- --local-only` re-embeds the internal docs without crawling the web again.
 2. **Chunking & embedding**: heading-aware chunks (~1,800 chars, 300 overlap, heading prepended); `Xenova/multilingual-e5-small` locally with `passage:`/`query:` prefixes (Portuguese pages, questions in any language).
-3. **Storage**: in-memory cosine index behind a `VectorStore` interface, persisted as `data/index.json` (212 chunks); fails fast on an embedder mismatch.
+3. **Storage**: in-memory cosine index behind a `VectorStore` interface, persisted as `data/index.json` (215 chunks); fails fast on an embedder mismatch.
 4. **Retrieval**: top-k 6, similarity threshold, ≤ 2 chunks per URL.
 5. **Generation**: RAG is a tool, so the agent can reformulate and search again; answers only from numbered excerpts, sources attached by the system.
 
@@ -247,6 +286,7 @@ PII (cards with Luhn, CPF, CNPJ, e-mail) masked before logs, LLM and storage · 
 - **Resume from a checkpoint** instead of re-running the agent: the provider never changes mid-conversation, so the exact run can continue, without repeating earlier tool calls (5–15 s saved per resume on the 8B).
 - **The conversation is not paused** while a handoff is open: the interrupt belongs to the request; one open handoff per conversation.
 - **Deterministic where possible**: escalation, compaction, replanning, approval gating, language detection, templates. LLMs route, write and judge.
+- **A "not found" does not erase what was found**: when Support answered from the account and Knowledge then found no official guidance, Support's answer is the final one and nobody is queued. Testing the feedback's own example ("Minha maquininha está offline.") showed the opposite: "I couldn't find…" plus a needless handoff — the Portuguese search missed the English-only playbook, which is now bilingual.
 - **Local models need structure**: constrained decoding (`format`) for every structured output, argument coercion, and a constrained call to propose the replacement when the 8B does not.
 
 ## Limitations and next steps
