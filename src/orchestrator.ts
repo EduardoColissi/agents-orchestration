@@ -14,6 +14,8 @@ import { dedupeSources } from './agents/toolLoop.js';
 export interface ChatRequest {
   message: string;
   userId: string;
+  /** Conversation context block (memory), '' or absent for a new conversation. */
+  context?: string;
   /** Propagated from the HTTP layer so logs and errors share the same id. */
   traceId?: string;
 }
@@ -120,10 +122,20 @@ export class Orchestrator {
     }
 
     // 2. Router.
-    const routed = await timed(() => this.deps.router.decide(message, guessedLanguage));
+    const routed = await timed(() => this.deps.router.decide(message, guessedLanguage, request.context ?? ''));
     const { decision, fallback, error } = routed.value;
     usage = addUsage(usage, routed.value.usage);
     turn.decision = fallback ? null : decision;
+    // Follow-ups are rewritten by the Router; the rewrite goes through the input guardrail too.
+    const query = decision.standalone_query?.trim() || message;
+    turn.standaloneQuery = query === message ? null : query;
+    if (query !== message && !checkInput(query, request.userId).allowed) {
+      log.warn({ stage: 'guardrail_input', standalone_query: query }, 'rewritten query blocked');
+      return this.finish(turn, log, started, traceId, usage, {
+        answer: BLOCKED_MESSAGES[guessedLanguage] ?? BLOCKED_MESSAGES.en!, route: 'blocked', agents: executed, results: [],
+        handoff: { required: false, reason: 'prompt_injection', ticket_id: null }, language: guessedLanguage,
+      });
+    }
     executed.push('router');
     log.info({ stage: 'router', agent: 'router', latency_ms: routed.ms, ...routeLog(decision), fallback, error, tokens: routed.value.usage }, 'routing decision');
 
@@ -157,7 +169,7 @@ export class Orchestrator {
       const agent = this.deps.agents[step];
       try {
         const run = await timed(() =>
-          agent.run({ traceId, userId: request.userId, message, language, previous: [...results], nextSteps: decision.plan.slice(index + 1) }),
+          agent.run({ traceId, userId: request.userId, message, history: request.context ?? '', query, language, previous: [...results], nextSteps: decision.plan.slice(index + 1) }),
         );
         results.push(run.value);
         executed.push(step);

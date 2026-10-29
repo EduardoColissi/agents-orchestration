@@ -32,6 +32,10 @@ export interface AgentContext {
   message: string;
   /** ISO 639-1 code detected by the Router (e.g. "en", "pt"). */
   language: string;
+  /** Conversation context block (summary + recent messages), '' for a new conversation. */
+  history: string;
+  /** Self-contained question from the Router (follow-ups resolved); equals `message` otherwise. */
+  query: string;
   /** Outputs of earlier steps in the same plan (FR2). */
   previous: AgentResult[];
   /** Agents that will run after this one in the same plan. */

@@ -64,11 +64,11 @@ describe('detectLanguage', () => {
 
 describe('normalizePlan', () => {
   it('makes the plan start with the route and clears it for terminal routes', () => {
-    expect(normalizePlan({ route: 'support', plan: ['knowledge'], confidence: 1, language: 'en', reason: '' }).plan).toEqual(['support', 'knowledge']);
-    expect(normalizePlan({ route: 'knowledge', plan: [], confidence: 1, language: 'en', reason: '' }).plan).toEqual(['knowledge']);
-    expect(normalizePlan({ route: 'blocked', plan: ['support'], confidence: 1, language: 'en', reason: '' }).plan).toEqual([]);
+    expect(normalizePlan({ route: 'support', plan: ['knowledge'], confidence: 1, language: 'en', reason: '', standalone_query: '' }).plan).toEqual(['support', 'knowledge']);
+    expect(normalizePlan({ route: 'knowledge', plan: [], confidence: 1, language: 'en', reason: '', standalone_query: '' }).plan).toEqual(['knowledge']);
+    expect(normalizePlan({ route: 'blocked', plan: ['support'], confidence: 1, language: 'en', reason: '', standalone_query: '' }).plan).toEqual([]);
     // A two-step plan is always support → knowledge, whatever order the model used.
-    expect(normalizePlan({ route: 'knowledge', plan: ['support', 'knowledge'], confidence: 1, language: 'en', reason: '' })).toMatchObject({ route: 'support', plan: ['support', 'knowledge'] });
+    expect(normalizePlan({ route: 'knowledge', plan: ['support', 'knowledge'], confidence: 1, language: 'en', reason: '', standalone_query: '' })).toMatchObject({ route: 'support', plan: ['support', 'knowledge'] });
   });
 });
 

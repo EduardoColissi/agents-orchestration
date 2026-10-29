@@ -6,6 +6,7 @@ import { createSupportTools } from '../support/tools.js';
 import { addDays, localDate, weekdayName } from '../support/dates.js';
 import { supportPrompt } from './prompts.js';
 import { runToolLoop, type AgentTool } from './toolLoop.js';
+import { withConversation } from './knowledge.js';
 
 export interface SupportAgentOptions {
   model: string;
@@ -63,7 +64,7 @@ export class SupportAgent implements Agent {
       llm: this.llm,
       model: this.options.model,
       system: supportPrompt({ today, yesterday, weekday: weekdayName(today), language: ctx.language, customerName: customer.businessName, hasNextStep: ctx.nextSteps.length > 0 }),
-      userMessage: ctx.message,
+      userMessage: withConversation(ctx),
       tools,
       maxIterations: this.options.maxIterations,
       maxTokens: 1000,

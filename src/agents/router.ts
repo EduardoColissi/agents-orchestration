@@ -10,6 +10,8 @@ export const RouteDecisionSchema = z.object({
   language: z.string().min(2).max(8),
   // Truncate instead of failing: a long explanation must not discard a valid route.
   reason: z.string().transform((r) => r.slice(0, 300)),
+  /** The message rewritten as a self-contained question (follow-ups resolved from the context). */
+  standalone_query: z.string().transform((q) => q.slice(0, 500)),
 });
 
 export type RouteDecision = z.infer<typeof RouteDecisionSchema>;
@@ -30,12 +32,12 @@ export class RouterAgent {
 
   constructor(private readonly llm: LLMClient, private readonly model: string) {}
 
-  async decide(message: string, fallbackLanguage: string): Promise<RouterOutcome> {
+  async decide(message: string, fallbackLanguage: string, context = ''): Promise<RouterOutcome> {
     try {
       const response = await this.llm.complete({
         model: this.model,
         system: ROUTER_PROMPT,
-        messages: [{ role: 'user', content: `<merchant_message>\n${message}\n</merchant_message>` }],
+        messages: [{ role: 'user', content: `${context ? `${context}\n` : ''}<merchant_message>\n${message}\n</merchant_message>` }],
         tools: [{ name: 'route_decision', description: 'Record the routing decision.', inputSchema: ROUTE_DECISION_JSON_SCHEMA }],
         forceTool: 'route_decision',
         maxTokens: 500,
@@ -53,7 +55,7 @@ export class RouterAgent {
 
   private fallback(language: string, usage: TokenUsage, error: string): RouterOutcome {
     return {
-      decision: { route: 'escalation', plan: [], confidence: 0, language, reason: 'router_failure' },
+      decision: { route: 'escalation', plan: [], confidence: 0, language, reason: 'router_failure', standalone_query: '' },
       usage,
       fallback: true,
       error,

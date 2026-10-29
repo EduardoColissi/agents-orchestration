@@ -3,6 +3,8 @@ import type { ChatResponse, Orchestrator } from '../orchestrator.js';
 import type { AuditLog } from '../store/audit.js';
 import type { Conversation, ConversationStore } from '../store/conversations.js';
 import { transaction, type Db } from '../store/db.js';
+import { buildContextBlock } from '../memory/context.js';
+import { compact } from '../memory/compaction.js';
 
 export class ConversationNotFoundError extends Error {}
 export class ConversationBusyError extends Error {}
@@ -29,11 +31,14 @@ export class ChatService {
     if (this.busy.has(conversation.id)) throw new ConversationBusyError();
     this.busy.add(conversation.id);
     try {
-      const turn = await this.deps.orchestrator.handle({ message: input.message, userId: principal.sub, traceId: input.traceId });
+      const context = buildContextBlock({ summary: conversation.summary, messages: this.deps.conversations.messages(conversation.id, { inContextOnly: true }) });
+      const turn = await this.deps.orchestrator.handle({ message: input.message, userId: principal.sub, traceId: input.traceId, context });
       transaction(this.deps.db, () => {
         const base = { conversationId: conversation.id, traceId: input.traceId, inContext: turn.inContext };
         this.deps.conversations.addMessage({ ...base, role: 'merchant', content: turn.maskedMessage });
         this.deps.conversations.addMessage({ ...base, role: 'assistant', content: turn.response.answer, route: turn.response.route, evidence: turn.evidence });
+        const compacted = compact(conversation.summary, conversation.summarizedUpto, this.deps.conversations.messages(conversation.id, { inContextOnly: true }));
+        if (compacted) this.deps.conversations.updateSummary(conversation.id, compacted.summary, compacted.summarizedUpto);
       });
       const { trace_id, ...rest } = turn.response;
       return { trace_id, conversation_id: conversation.id, ...rest };

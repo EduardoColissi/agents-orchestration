@@ -7,6 +7,19 @@ import { createWebSearchTool } from './webSearchTool.js';
 
 const NOT_FOUND_MARKER = '<<NOT_FOUND>>';
 
+/** Message as the agent sees it: unchanged for a fresh, self-contained message (v1 behaviour). */
+export function withConversation(ctx: AgentContext): string {
+  if (!ctx.history && ctx.query === ctx.message) return ctx.message;
+  const standalone = ctx.query !== ctx.message ? `
+<standalone_question>
+${ctx.query}
+</standalone_question>` : '';
+  return `${ctx.history ? `${ctx.history}
+` : ''}<merchant_message>
+${ctx.message}
+</merchant_message>${standalone}`;
+}
+
 export interface KnowledgeAgentOptions {
   model: string;
   webSearchMaxUses: number;
@@ -28,8 +41,8 @@ export class KnowledgeAgent implements Agent {
     const now = this.options.now?.() ?? new Date();
     const previous = ctx.previous.filter((p) => p.answer.trim());
     const userMessage = previous.length
-      ? `${ctx.message}\n\n<account_findings agent="support">\n${previous.map((p) => p.answer).join('\n\n')}\n</account_findings>`
-      : ctx.message;
+      ? `${withConversation(ctx)}\n\n<account_findings agent="support">\n${previous.map((p) => p.answer).join('\n\n')}\n</account_findings>`
+      : withConversation(ctx);
 
     // Providers without server-side search (Ollama) get a local DuckDuckGo tool instead.
     const serverSearch = this.llm.capabilities.serverWebSearch;

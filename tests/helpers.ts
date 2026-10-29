@@ -49,7 +49,7 @@ export function kindOf(request: LLMRequest): AgentKind {
 }
 
 export const route = (d: Partial<RouteDecision> & Pick<RouteDecision, 'route'>): FakeReply => ({
-  toolCalls: [{ name: 'route_decision', input: { plan: [d.route], confidence: 0.95, language: 'en', reason: 'test', ...d } }],
+  toolCalls: [{ name: 'route_decision', input: { plan: [d.route], confidence: 0.95, language: 'en', reason: 'test', standalone_query: '', ...d } }],
 });
 
 /**

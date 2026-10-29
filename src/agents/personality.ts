@@ -50,6 +50,6 @@ export class PersonalityStage {
 
 /** Numbers, amounts, dates, codes and ticket ids that a tone rewrite must preserve verbatim. */
 export function factsOf(text: string): string[] {
-  const facts = text.match(/TCK-[A-Z0-9]+|GS-[A-Z0-9-]+|GC-[A-Z0-9-]+|\d{4}-\d{2}-\d{2}|\d+(?:[.,]\d+)+|\b\d+\b/g) ?? [];
+  const facts = text.match(/TCK-[A-Z0-9]+|HND-[A-Z0-9]+|GS-[A-Z0-9-]+|GC-[A-Z0-9-]+|\d{4}-\d{2}-\d{2}|\d+(?:[.,]\d+)+|\b\d+\b/g) ?? [];
   return [...new Set(facts)];
 }
