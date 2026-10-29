@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { AppDeps } from './container.js';
 import { registerAuth, requireRole } from './auth/plugin.js';
 import { ConversationBusyError, ConversationNotFoundError } from './chat/service.js';
+import { HandoffConflictError, HandoffNotFoundError, InvalidHandoffActionError } from './hitl/service.js';
 
 export const ChatRequestSchema = z.object({
   message: z.string().trim().min(1, 'message must not be empty').max(2000),
@@ -12,6 +13,12 @@ export const ChatRequestSchema = z.object({
   user_id: z.string().trim().min(1).max(64).regex(/^[\w.@-]+$/, 'user_id has invalid characters').optional(),
   /** Omit to start a new conversation; the response returns its id. */
   conversation_id: z.uuid().optional(),
+});
+
+const ResolveSchema = z.object({
+  action: z.enum(['reply', 'approve', 'reject']),
+  message: z.string().trim().max(2000).optional(),
+  expected_version: z.number().int().min(1),
 });
 
 const TokenRequestSchema = z.object({
@@ -54,7 +61,24 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get<{ Params: { id: string } }>('/conversations/:id', { preHandler: requireRole('merchant') }, async (request) => deps.chat.view(request.principal!, request.params.id));
 
+  // Operator queue (spec FR19). Operators never chat; merchants never see this.
+  const operator = { preHandler: requireRole('operator') };
+  app.get<{ Querystring: { status?: string } }>('/operator/handoffs', operator, async (request) => {
+    const status = z.enum(['pending', 'resuming', 'completed', 'expired']).catch('pending').parse(request.query.status);
+    return { items: deps.hitl.queue(status) };
+  });
+  app.get<{ Params: { id: string } }>('/operator/handoffs/:id', operator, async (request) => deps.hitl.detail(request.params.id));
+  app.post<{ Params: { id: string } }>('/operator/handoffs/:id/resolve', operator, async (request, reply) => {
+    const parsed = ResolveSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', details: z.flattenError(parsed.error).fieldErrors });
+    return deps.hitl.resolve(request.principal!, request.params.id, { action: parsed.data.action, expectedVersion: parsed.data.expected_version, ...(parsed.data.message ? { message: parsed.data.message } : {}) });
+  });
+  app.get<{ Params: { id: string } }>('/operator/conversations/:id', operator, async (request) => deps.hitl.conversationTrace(request.principal!, request.params.id));
+
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
+    if (error instanceof HandoffNotFoundError) return reply.code(404).send({ error: 'not_found', trace_id: request.id });
+    if (error instanceof InvalidHandoffActionError) return reply.code(400).send({ error: 'invalid_action', details: error.message, trace_id: request.id });
+    if (error instanceof HandoffConflictError) return reply.code(409).send({ error: error.code, status: error.handoff.status, version: error.handoff.version, trace_id: request.id });
     if (error instanceof ConversationNotFoundError) return reply.code(404).send({ error: 'conversation_not_found', trace_id: request.id });
     if (error instanceof ConversationBusyError) return reply.code(409).send({ error: 'conversation_busy', trace_id: request.id });
     // Malformed JSON, wrong content type, body too large, rate limit…

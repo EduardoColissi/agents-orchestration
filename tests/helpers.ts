@@ -71,6 +71,6 @@ export async function buildTestApp(llm: FakeLLM, opts: { emptyKb?: boolean; pers
   const repo = new MockCustomerRepository(JSON.parse(readFileSync('data/customers.json', 'utf8')), FIXED_NOW);
   const embedder = new HashingEmbedder();
   const store = await buildIndex(opts.emptyKb ? [] : KB_DOCS, embedder);
-  const deps = buildDependencies({ config, llm, repo, store, embedder, now: FIXED_NOW, logger: pino({ level: 'silent' }) });
+  const deps = buildDependencies({ config, llm, repo, store, embedder, now: opts.now ?? FIXED_NOW, logger: pino({ level: 'silent' }) });
   return { app: await buildServer(deps), repo, llm, deps };
 }

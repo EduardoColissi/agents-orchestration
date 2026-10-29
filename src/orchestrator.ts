@@ -10,12 +10,15 @@ import { detectLanguage } from './guardrails/language.js';
 import { maskPII } from './guardrails/pii.js';
 import { addUsage, emptyUsage, type Agent, type AgentName, type AgentResult, type Route, type Source, type TokenUsage, type ToolEvidence } from './types.js';
 import { dedupeSources } from './agents/toolLoop.js';
+import { newHandoffId, type HandoffKind } from './store/handoffs.js';
 
 export interface ChatRequest {
   message: string;
   userId: string;
   /** Conversation context block (memory), '' or absent for a new conversation. */
   context?: string;
+  /** The conversation's open handoff: no second one is opened while it is pending. */
+  openHandoff?: { id: string; kind: HandoffKind; status: string } | null;
   /** Propagated from the HTTP layer so logs and errors share the same id. */
   traceId?: string;
 }
@@ -28,7 +31,7 @@ export interface ChatResponse {
   agents: AgentName[];
   sources: Source[];
   tools_used: string[];
-  handoff: { required: boolean; reason: string | null; ticket_id: string | null };
+  handoff: { required: boolean; reason: string | null; ticket_id: string | null; handoff_id?: string | null; kind?: HandoffKind | null; status?: string | null };
   latency_ms: number;
 }
 
@@ -47,6 +50,17 @@ export interface OrchestratorTurn {
   /** false for blocked turns: stored for audit, never sent back to an LLM. */
   inContext: boolean;
   evidence: TurnEvidence;
+  /** A new handoff to put in the operator queue (persisted with the turn). */
+  handoffRequest: HandoffRequestSpec | null;
+}
+
+export interface HandoffRequestSpec {
+  id: string;
+  kind: HandoffKind;
+  reason: string;
+  language: string;
+  checkpoint?: unknown;
+  proposedAction?: { tool: string; input: unknown };
 }
 
 interface TurnState {
@@ -54,6 +68,8 @@ interface TurnState {
   decision: RouteDecision | null;
   standaloneQuery: string | null;
   results: AgentResult[];
+  openHandoff: ChatRequest['openHandoff'];
+  handoffRequest: HandoffRequestSpec | null;
 }
 
 export interface OrchestratorDeps {
@@ -80,10 +96,12 @@ export class Orchestrator {
   constructor(private readonly deps: OrchestratorDeps) {}
 
   async handle(request: ChatRequest): Promise<OrchestratorTurn> {
-    const turn: TurnState = { message: request.message, decision: null, standaloneQuery: null, results: [] };
+    const turn: TurnState = { message: request.message, decision: null, standaloneQuery: null, results: [], openHandoff: request.openHandoff ?? null, handoffRequest: null };
     const response = await this.run(request, turn);
+    response.handoff = { handoff_id: null, kind: null, status: null, ...response.handoff };
     return {
       response,
+      handoffRequest: turn.handoffRequest,
       maskedMessage: turn.message,
       inContext: response.route !== 'blocked',
       evidence: {
@@ -213,12 +231,12 @@ export class Orchestrator {
       });
     }
     if (handoffReason) {
-      const existingTicketId = results.find((r) => r.handoff?.ticketId)?.handoff?.ticketId;
-      const escalation = await this.deps.escalation.handoff({ userId: request.userId, language, reason: handoffReason, message, ...(existingTicketId ? { existingTicketId } : {}) });
+      const existingTicketId = results.find((r) => r.handoff?.ticketId)?.handoff?.ticketId ?? null;
+      const { result: escalation, handoff } = this.openAssist(turn, language, handoffReason);
       executed.push('escalation');
       return this.finish(turn, log, started, traceId, usage, {
         answer: `${answer}\n\n${escalation.answer}`, route: decision.route, agents: executed, results: [...results, escalation],
-        handoff: { required: true, reason: handoffReason, ticket_id: escalation.handoff!.ticketId ?? null }, language,
+        handoff: { ...handoff, ticket_id: existingTicketId }, language,
       });
     }
 
@@ -233,13 +251,21 @@ export class Orchestrator {
     log: Logger, started: number, traceId: string, usage: TokenUsage, executed: AgentName[],
     p: { userId: string; language: string; reason: HandoffReason; message: string; results: AgentResult[] },
   ): Promise<ChatResponse> {
-    const result = await this.deps.escalation.handoff(p);
+    const { result, handoff } = this.openAssist(turn, p.language, p.reason);
     executed.push('escalation');
-    log.info({ stage: 'agent', agent: 'escalation', reason: p.reason, ticket_id: result.handoff?.ticketId }, 'escalated to human');
+    log.info({ stage: 'agent', agent: 'escalation', reason: p.reason, handoff_id: handoff.handoff_id }, 'escalated to human');
     return this.finish(turn, log, started, traceId, usage, {
-      answer: result.answer, route: 'escalation', agents: executed, results: [...p.results, result],
-      handoff: { required: true, reason: p.reason, ticket_id: result.handoff?.ticketId ?? null }, language: p.language,
+      answer: result.answer, route: 'escalation', agents: executed, results: [...p.results, result], handoff, language: p.language,
     });
+  }
+
+  /** Queues an `assist` handoff, or points to the conversation's open one (one at a time, FR23). */
+  private openAssist(turn: TurnState, language: string, reason: string): { result: AgentResult; handoff: ChatResponse['handoff'] } {
+    const open = turn.openHandoff;
+    const id = open?.id ?? newHandoffId();
+    if (!open) turn.handoffRequest = { id, kind: 'assist', reason, language };
+    const result = this.deps.escalation.handoff({ language, reason, handoffId: id, alreadyOpen: !!open });
+    return { result, handoff: { required: true, reason, ticket_id: null, handoff_id: id, kind: open?.kind ?? 'assist', status: open?.status ?? 'pending' } };
   }
 
   private async finish(

@@ -5,6 +5,7 @@ import type { Conversation, ConversationStore } from '../store/conversations.js'
 import { transaction, type Db } from '../store/db.js';
 import { buildContextBlock } from '../memory/context.js';
 import { compact } from '../memory/compaction.js';
+import { HandoffAlreadyOpenError, type HandoffStore } from '../store/handoffs.js';
 
 export class ConversationNotFoundError extends Error {}
 export class ConversationBusyError extends Error {}
@@ -13,7 +14,9 @@ export interface ChatServiceDeps {
   db: Db;
   orchestrator: Orchestrator;
   conversations: ConversationStore;
+  handoffs: HandoffStore;
   audit: AuditLog;
+  handoffTtlMinutes: number;
 }
 
 /**
@@ -31,14 +34,30 @@ export class ChatService {
     if (this.busy.has(conversation.id)) throw new ConversationBusyError();
     this.busy.add(conversation.id);
     try {
-      const context = buildContextBlock({ summary: conversation.summary, messages: this.deps.conversations.messages(conversation.id, { inContextOnly: true }) });
-      const turn = await this.deps.orchestrator.handle({ message: input.message, userId: principal.sub, traceId: input.traceId, context });
+      const open = this.deps.handoffs.openFor(conversation.id);
+      const openHandoff = open ? { id: open.id, kind: open.kind, status: open.status } : null;
+      const context = buildContextBlock({ summary: conversation.summary, messages: this.deps.conversations.messages(conversation.id, { inContextOnly: true }), openHandoff });
+      const turn = await this.deps.orchestrator.handle({ message: input.message, userId: principal.sub, traceId: input.traceId, context, openHandoff });
       transaction(this.deps.db, () => {
         const base = { conversationId: conversation.id, traceId: input.traceId, inContext: turn.inContext };
         this.deps.conversations.addMessage({ ...base, role: 'merchant', content: turn.maskedMessage });
         this.deps.conversations.addMessage({ ...base, role: 'assistant', content: turn.response.answer, route: turn.response.route, evidence: turn.evidence });
         const compacted = compact(conversation.summary, conversation.summarizedUpto, this.deps.conversations.messages(conversation.id, { inContextOnly: true }));
         if (compacted) this.deps.conversations.updateSummary(conversation.id, compacted.summary, compacted.summarizedUpto);
+        const h = turn.handoffRequest;
+        if (h) {
+          try {
+            this.deps.handoffs.create({
+              id: h.id, conversationId: conversation.id, ownerId: principal.sub, kind: h.kind, reason: h.reason, ttlMinutes: this.deps.handoffTtlMinutes,
+              request: { message: turn.maskedMessage, language: h.language, ...(h.proposedAction ? { proposed_action: h.proposedAction } : {}) },
+              ...(h.checkpoint !== undefined ? { checkpoint: h.checkpoint } : {}),
+            });
+            this.deps.audit.write({ actor: principal.sub, action: 'handoff.created', subject: h.id, details: { kind: h.kind, reason: h.reason } });
+          } catch (err) {
+            // A concurrent turn opened one first: the merchant already has a request in the queue.
+            if (!(err instanceof HandoffAlreadyOpenError)) throw err;
+          }
+        }
       });
       const { trace_id, ...rest } = turn.response;
       return { trace_id, conversation_id: conversation.id, ...rest };
@@ -54,6 +73,7 @@ export class ChatService {
       id: conversation.id,
       created_at: conversation.createdAt,
       messages: this.deps.conversations.messages(conversation.id).map((m) => ({ role: m.role, content: m.content, created_at: m.createdAt, handoff_id: m.handoffId })),
+      open_handoff: ((h) => (h ? { id: h.id, kind: h.kind, status: h.status } : null))(this.deps.handoffs.openFor(conversation.id)),
     };
   }
 

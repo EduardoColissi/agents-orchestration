@@ -127,11 +127,13 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     expect((await post(app, 'How do I launder money through my card machine sales?')).json().route).toBe('blocked');
   });
 
-  it('N2: explicit request for a human escalates with a ticket', async () => {
+  it('N2: explicit request for a human queues an assist handoff (no ticket)', async () => {
     const { app, repo } = await buildTestApp(scriptedLLM({ router: [route({ route: 'escalation', plan: [] })] }));
     const body = (await post(app, 'I want to talk to a human')).json();
     expect(body).toMatchObject({ route: 'escalation', agents: ['router', 'escalation'], handoff: { required: true, reason: 'user_requested' } });
-    expect(repo.listTickets('cliente1988')[0]!.category).toBe('human_handoff');
+    expect(body.handoff).toMatchObject({ handoff_id: expect.stringMatching(/^HND-/), kind: 'assist', status: 'pending' });
+    expect(body.answer).toContain(body.handoff.handoff_id);
+    expect(repo.listTickets('cliente1988')).toHaveLength(0);
   });
 
   it('N3: unknown user gets a graceful answer and a handoff offer, without calling the support LLM', async () => {
@@ -140,7 +142,7 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     const body = (await post(app, 'When will my sales be deposited?', 'ghost42')).json();
     expect(body.answer).toContain("couldn't find a Getnet account");
     expect(body.answer).toContain('human agent');
-    expect(body.handoff).toEqual({ required: true, reason: 'customer_not_found', ticket_id: null });
+    expect(body.handoff).toEqual({ required: true, reason: 'customer_not_found', ticket_id: null, handoff_id: null, kind: null, status: null });
     expect(repo.listTickets()).toHaveLength(0);
     expect(llm.calls.some((c) => kindOf(c) === 'support')).toBe(false);
   });
@@ -212,7 +214,7 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     const body = (await post(app, 'How many installments can I split a sale into with the crediário?')).json();
     expect(body.answer).not.toContain('<<NOT_FOUND>>');
     expect(body.agents).toEqual(['router', 'knowledge', 'escalation']);
-    expect(body.handoff).toMatchObject({ required: true, reason: 'knowledge_gap', ticket_id: expect.stringMatching(/^TCK-/) });
+    expect(body.handoff).toMatchObject({ required: true, reason: 'knowledge_gap', ticket_id: null, handoff_id: expect.stringMatching(/^HND-/), kind: 'assist' });
   });
 
   it('ungrounded knowledge answers get a disclaimer and a handoff flag', async () => {
