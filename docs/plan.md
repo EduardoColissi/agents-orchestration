@@ -256,3 +256,10 @@ Driven by an independent review of the diff and by an independent re-evaluation 
 - **Replanning signals** — the planned signals were `terminal_offline`, `not_found`, `tool_error` (tasks T12). Implemented: `terminal_offline` → add Knowledge, `tool_error` (a support tool crashed) → escalate, `live_data_unavailable` (web search blocked) → finish without a person. Eval case R1 exercises the replanner.
 - **Approval outcome** — the decision is stated in the tool result; a resumed answer that sounds pending is replaced by the deterministic outcome; the resumed run's tool calls are stored as evidence.
 - **Hardening** — login limited per IP + username, chat limited per merchant, builds stamped with the commit (`/health` → `version`, recorded in every eval report).
+
+Driven by walking through the test plan by hand with the feedback's own example ("Minha maquininha está offline."), which answered "I couldn't find…" and opened a needless handoff:
+
+- **Retrieval** — the Knowledge agent searches in Portuguese and the internal playbook was English only: it is now bilingual, re-embedded with `npm run ingest -- --local-only` (the crawled chunks are untouched).
+- **Offline guide searched in code** — the 8B still searched for the wrong thing ("máquina de cartão online"): when Support's diagnostics show an offline machine (the replanner's signal, now shared), Knowledge receives the troubleshooting guide as excerpts, recorded as evidence and as a RAG span.
+- **Synthesis** — support → knowledge answers are joined in code: Support's account facts (without ticket talk when no ticket was opened — the 8B promised one or invented a number) followed by Knowledge's guidance, minus paragraphs that only restate the facts. A "not found" from Knowledge leaves Support's answer standing, with no handoff.
+- **Settlement days** — the 8B swapped "today" and "tomorrow": `get_settlements` returns the weekday, today/tomorrow/yesterday and a one-line summary per payment method, all computed in code.
