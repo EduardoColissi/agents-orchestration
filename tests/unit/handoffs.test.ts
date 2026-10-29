@@ -43,14 +43,18 @@ describe('HandoffStore (FR20, FR21, FR23)', () => {
     expect(open().status).toBe('pending');
   });
 
-  it('expires pending handoffs after the TTL, never resolved ones', () => {
+  it('expires pending handoffs after the TTL, and an overdue one cannot be resolved even before the sweep', () => {
     const { open, handoffs, advance } = setup();
     const h = open();
     advance(59);
-    expect(handoffs.expireDue()).toEqual([]);
+    expect(handoffs.dueForExpiry()).toEqual([]);
     advance(2);
-    expect(handoffs.expireDue().map((x) => [x.id, x.status])).toEqual([[h.id, 'expired']]);
-    expect(handoffs.beginResume(h.id, 2, { action: 'reply', message: 'late' }, 'op.ana')).toBeNull();
+    // Overdue but not swept yet: the resolve CAS already refuses it.
+    expect(handoffs.beginResume(h.id, 1, { action: 'reply', message: 'late' }, 'op.ana')).toBeNull();
+    expect(handoffs.dueForExpiry().map((x) => x.id)).toEqual([h.id]);
+    expect(handoffs.expire(handoffs.get(h.id)!)).toBe(true);
+    expect(handoffs.expire(handoffs.get(h.id)!)).toBe(false);
+    expect(handoffs.get(h.id)!.status).toBe('expired');
   });
 
   it('delivers a handoff outcome to the conversation exactly once', () => {

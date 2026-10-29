@@ -115,6 +115,10 @@ export async function runToolLoop(params: ToolLoopParams): Promise<ToolLoopResul
       let result: ToolResultContent;
       if (!tool) {
         result = { type: 'tool_result', tool_use_id: call.id, content: `Unknown tool: ${call.name}`, is_error: true };
+      } else if (tool.requiresApproval) {
+        // A gated tool never runs inside the loop: only one valid proposal per turn goes to an operator.
+        const invalid = tool.validate?.(call.input);
+        result = { type: 'tool_result', tool_use_id: call.id, content: invalid ?? `${call.name} was not executed: only one action needing approval per turn.`, is_error: true };
       } else {
         try {
           const out = await tool.execute(call.input);

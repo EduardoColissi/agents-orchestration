@@ -215,4 +215,47 @@ describe('approval guard rails', () => {
     expect(llm.calls.at(-1)!.forceTool).toBe('request_terminal_replacement');
     expect(t.repo.listTickets()).toHaveLength(0);
   });
+
+describe('HITL robustness (post-clock review)', () => {
+  it('an overdue approval cannot be approved before the sweeper runs (409 handoff_expired, nothing executed)', async () => {
+    let now = new Date('2026-10-23T15:00:00Z');
+    const llm = scriptedLLM({
+      router: [route({ route: 'support', language: 'pt' })],
+      support: [{ toolCalls: [{ name: 'request_terminal_replacement', input: { serial: 'GS-1988-0001', reason: 'offline for days' } }] }],
+    });
+    const t = await buildTestApp(llm, { now: () => now });
+    const body = await chat(t, 'Quero trocar minha maquininha GS-1988-0001 por uma nova');
+    now = new Date(now.getTime() + 241 * 60_000);
+    const res = await asOperator(t, 'POST', `/operator/handoffs/${body.handoff.handoff_id}/resolve`, { action: 'approve', expected_version: 1 });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: 'handoff_expired', status: 'expired' });
+    expect(t.repo.listTickets()).toHaveLength(0);
+  });
+
+  it('a delivery that fails keeps the decision and is retried by the periodic tick', async () => {
+    const t = await buildTestApp(scriptedLLM({ router: [route({ route: 'escalation', plan: [] })] }));
+    const { conversationId, handoffId } = await escalate(t);
+    const original = t.deps.conversations.addMessage.bind(t.deps.conversations);
+    let fail = true;
+    t.deps.conversations.addMessage = (m) => {
+      if (fail && m.handoffId) throw new Error('disk full');
+      return original(m);
+    };
+    const res = await asOperator(t, 'POST', `/operator/handoffs/${handoffId}/resolve`, { action: 'reply', message: 'Oi!', expected_version: 1 });
+    expect(res.statusCode).toBe(503);
+    expect(t.deps.handoffs.get(handoffId)!.status).toBe('resuming');
+    fail = false;
+    await t.deps.hitl.tick(0);
+    expect(t.deps.handoffs.get(handoffId)!.status).toBe('completed');
+    expect(t.deps.conversations.messages(conversationId).at(-1)!.content).toBe('Oi!');
+  });
+
+  it('a merchant token cannot resolve handoffs nor read conversation evidence', async () => {
+    const t = await buildTestApp(scriptedLLM({ router: [route({ route: 'escalation', plan: [] })] }));
+    const { conversationId, handoffId } = await escalate(t);
+    const merchant = { authorization: await tokenFor('cliente1988') };
+    expect((await t.app.inject({ method: 'POST', url: `/operator/handoffs/${handoffId}/resolve`, headers: merchant, payload: { action: 'reject', expected_version: 1 } })).statusCode).toBe(403);
+    expect((await t.app.inject({ method: 'GET', url: `/operator/conversations/${conversationId}`, headers: merchant })).statusCode).toBe(403);
+  });
+});
 });

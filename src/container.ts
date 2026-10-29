@@ -120,7 +120,7 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
   const chat = new ChatService({ db, orchestrator, conversations, handoffs, spans, audit, handoffTtlMinutes: config.HANDOFF_TTL_MINUTES });
   const support = orchestrator.agents.support as SupportAgent;
   support.useAudit(audit);
-  const hitl = new HitlService({ db, handoffs, conversations, audit, logger, approvals: support });
+  const hitl = new HitlService({ db, handoffs, conversations, audit, logger, approvals: support, now });
 
   const readiness = async () => {
     const database = (() => {

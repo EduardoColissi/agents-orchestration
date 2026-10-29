@@ -91,9 +91,11 @@ export class HandoffStore {
 
   /** pending → resuming, only if nobody moved it since `expectedVersion`. Null = lost the race. */
   beginResume(id: string, expectedVersion: number, resolution: HandoffResolution, operatorId: string): Handoff | null {
+    const at = this.now().toISOString();
+    // An expired handoff can never be resolved, even before the sweeper marks it.
     const result = this.db
-      .prepare("UPDATE handoffs SET status = 'resuming', version = version + 1, resolution = ?, resolved_by = ?, updated_at = ? WHERE id = ? AND version = ? AND status = 'pending'")
-      .run(JSON.stringify(resolution), operatorId, this.now().toISOString(), id, expectedVersion);
+      .prepare("UPDATE handoffs SET status = 'resuming', version = version + 1, resolution = ?, resolved_by = ?, updated_at = ? WHERE id = ? AND version = ? AND status = 'pending' AND expires_at >= ?")
+      .run(JSON.stringify(resolution), operatorId, at, id, expectedVersion, at);
     return result.changes === 1 ? this.get(id) : null;
   }
 
@@ -103,17 +105,23 @@ export class HandoffStore {
     return result.changes === 1;
   }
 
-  /** pending past `expires_at` → expired. Returns the handoffs this call expired. */
-  expireDue(): Handoff[] {
-    const at = this.now().toISOString();
-    const due = (this.db.prepare("SELECT * FROM handoffs WHERE status = 'pending' AND expires_at < ?").all(at) as unknown as HandoffRow[]).map(toHandoff);
-    const update = this.db.prepare("UPDATE handoffs SET status = 'expired', version = version + 1, updated_at = ? WHERE id = ? AND version = ? AND status = 'pending'");
-    return due.filter((h) => update.run(at, h.id, h.version).changes === 1).map((h) => this.get(h.id)!);
+  /** Pending handoffs past `expires_at`. */
+  dueForExpiry(): Handoff[] {
+    return (this.db.prepare("SELECT * FROM handoffs WHERE status = 'pending' AND expires_at < ?").all(this.now().toISOString()) as unknown as HandoffRow[]).map(toHandoff);
   }
 
-  /** Resolutions interrupted by a crash, to be completed at boot. */
-  findResuming(): Handoff[] {
-    return this.list('resuming');
+  /** pending → expired (CAS). False when someone resolved it first. */
+  expire(h: Handoff): boolean {
+    const result = this.db
+      .prepare("UPDATE handoffs SET status = 'expired', version = version + 1, updated_at = ? WHERE id = ? AND version = ? AND status = 'pending'")
+      .run(this.now().toISOString(), h.id, h.version);
+    return result.changes === 1;
+  }
+
+  /** Resolutions interrupted by a crash or a failed delivery, untouched for `olderThanMs`. */
+  findResuming(olderThanMs = 0): Handoff[] {
+    const before = new Date(this.now().getTime() - olderThanMs).toISOString();
+    return this.list('resuming').filter((h) => h.updatedAt <= before);
   }
 }
 

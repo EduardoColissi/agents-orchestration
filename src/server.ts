@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { AppDeps } from './container.js';
 import { registerAuth, requireRole } from './auth/plugin.js';
 import { ConversationBusyError, ConversationNotFoundError } from './chat/service.js';
-import { HandoffConflictError, HandoffNotFoundError, InvalidHandoffActionError } from './hitl/service.js';
+import { HandoffConflictError, HandoffDeliveryError, HandoffNotFoundError, InvalidHandoffActionError } from './hitl/service.js';
 
 export const ChatRequestSchema = z.object({
   message: z.string().trim().min(1, 'message must not be empty').max(2000),
@@ -88,6 +88,7 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
     if (error instanceof HandoffNotFoundError) return reply.code(404).send({ error: 'not_found', trace_id: request.id });
     if (error instanceof InvalidHandoffActionError) return reply.code(400).send({ error: 'invalid_action', details: error.message, trace_id: request.id });
+    if (error instanceof HandoffDeliveryError) return reply.code(503).send({ error: 'delivery_pending', details: 'decision recorded; the outcome will be delivered automatically', trace_id: request.id });
     if (error instanceof HandoffConflictError) return reply.code(409).send({ error: error.code, status: error.handoff.status, version: error.handoff.version, trace_id: request.id });
     if (error instanceof ConversationNotFoundError) return reply.code(404).send({ error: 'conversation_not_found', trace_id: request.id });
     if (error instanceof ConversationBusyError) return reply.code(409).send({ error: 'conversation_busy', trace_id: request.id });

@@ -8,9 +8,11 @@ import type { Handoff, HandoffAction, HandoffStatus, HandoffStore } from '../sto
 
 export class HandoffNotFoundError extends Error {}
 export class InvalidHandoffActionError extends Error {}
+/** The decision is recorded but its outcome could not be delivered yet; the periodic tick retries it. */
+export class HandoffDeliveryError extends Error {}
 /** 409: the handoff is no longer pending, or another operator resolved it first. */
 export class HandoffConflictError extends Error {
-  constructor(readonly code: 'handoff_not_pending' | 'version_conflict', readonly handoff: Handoff) {
+  constructor(readonly code: 'handoff_not_pending' | 'handoff_expired' | 'version_conflict', readonly handoff: Handoff) {
     super(code);
   }
 }
@@ -27,6 +29,7 @@ export interface HitlServiceDeps {
   audit: AuditLog;
   logger: Logger;
   approvals?: ApprovalResumer;
+  now?: () => Date;
 }
 
 const ACTIONS: Record<Handoff['kind'], HandoffAction[]> = { assist: ['reply', 'reject'], approval: ['approve', 'reject'] };
@@ -84,6 +87,10 @@ export class HitlService {
     if (!ACTIONS[handoff.kind].includes(input.action)) throw new InvalidHandoffActionError(`${input.action} is not valid for ${handoff.kind}`);
     if (input.action === 'reply' && !input.message?.trim()) throw new InvalidHandoffActionError('reply needs a message');
     if (handoff.status !== 'pending') throw new HandoffConflictError('handoff_not_pending', handoff);
+    if (handoff.expiresAt < (this.deps.now ?? (() => new Date()))().toISOString()) {
+      this.sweep();
+      throw new HandoffConflictError('handoff_expired', this.mustGet(id));
+    }
 
     const resolution = { action: input.action, ...(input.message?.trim() ? { message: input.message.trim() } : {}) };
     const resuming = this.deps.handoffs.beginResume(id, input.expectedVersion, resolution, operator.sub);
@@ -92,8 +99,13 @@ export class HitlService {
       throw new HandoffConflictError('version_conflict', this.mustGet(id));
     }
     this.deps.audit.write({ actor: operator.sub, action: 'handoff.resolved', subject: id, details: { action: input.action, kind: handoff.kind } });
-    const message = await this.deliver(resuming);
-    return { handoff: publicView(this.mustGet(id)), message };
+    try {
+      const message = await this.deliver(resuming);
+      return { handoff: publicView(this.mustGet(id)), message };
+    } catch (err) {
+      this.deps.logger.error({ handoff_id: id, err }, 'handoff delivery failed; it will be retried');
+      throw new HandoffDeliveryError();
+    }
   }
 
   /**
@@ -120,25 +132,44 @@ export class HitlService {
 
   /** Pending past the TTL → expired, with a message to the merchant. An expired approval never runs. */
   sweep(): number {
-    const expired = this.deps.handoffs.expireDue();
-    for (const h of expired) {
+    let expired = 0;
+    for (const h of this.deps.handoffs.dueForExpiry()) {
+      // Status, merchant message and audit in one transaction: never expired without a notice.
       transaction(this.deps.db, () => {
+        if (!this.deps.handoffs.expire(h)) return;
         this.deps.conversations.addMessage({ conversationId: h.conversationId, role: 'assistant', content: pick(EXPIRED, h), handoffId: h.id });
         this.deps.audit.write({ actor: 'system', action: 'handoff.expired', subject: h.id });
+        expired++;
       });
     }
-    return expired.length;
+    return expired;
+  }
+
+  /** Periodic work: expire stale handoffs and retry deliveries stuck in `resuming`. Never throws. */
+  async tick(stuckAfterMs = 60_000): Promise<void> {
+    try {
+      this.sweep();
+      await this.recover(stuckAfterMs);
+    } catch (err) {
+      this.deps.logger.error({ err }, 'handoff maintenance failed');
+    }
   }
 
   /** Boot: finish resolutions interrupted by a crash, once each. */
-  async recover(): Promise<number> {
-    const stuck = this.deps.handoffs.findResuming();
-    for (const h of stuck) {
-      await this.deliver(h);
-      this.deps.audit.write({ actor: 'system', action: 'handoff.recovered', subject: h.id });
-      this.deps.logger.warn({ handoff_id: h.id }, 'recovered an interrupted handoff resolution');
+  async recover(olderThanMs = 0): Promise<number> {
+    let recovered = 0;
+    for (const h of this.deps.handoffs.findResuming(olderThanMs)) {
+      try {
+        await this.deliver(h);
+        this.deps.audit.write({ actor: 'system', action: 'handoff.recovered', subject: h.id });
+        this.deps.logger.warn({ handoff_id: h.id }, 'recovered an interrupted handoff resolution');
+        recovered++;
+      } catch (err) {
+        // One broken handoff must not stop the others, nor the boot.
+        this.deps.logger.error({ handoff_id: h.id, err }, 'handoff recovery failed; will retry');
+      }
     }
-    return stuck.length;
+    return recovered;
   }
 
   private mustGet(id: string): Handoff {

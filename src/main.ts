@@ -15,8 +15,9 @@ process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
 // Finish resolutions interrupted by a crash, then expire stale handoffs periodically (FR21).
+deps.hitl.sweep();
 await deps.hitl.recover();
-const sweeper = setInterval(() => deps.hitl.sweep(), config.SWEEP_INTERVAL_MS);
+const sweeper = setInterval(() => void deps.hitl.tick(), config.SWEEP_INTERVAL_MS);
 sweeper.unref();
 
 await app.listen({ port: config.PORT, host: config.HOST });
