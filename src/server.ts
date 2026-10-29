@@ -4,6 +4,7 @@ import rateLimit from '@fastify/rate-limit';
 import { z } from 'zod';
 import type { AppDeps } from './container.js';
 import { registerAuth, requireRole } from './auth/plugin.js';
+import { FixedWindowCounter } from './auth/limiter.js';
 import { ConversationBusyError, ConversationNotFoundError } from './chat/service.js';
 import { HandoffConflictError, HandoffDeliveryError, HandoffNotFoundError, InvalidHandoffActionError } from './hitl/service.js';
 
@@ -43,18 +44,23 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
 
   // Demo identity provider (spec §3): in production this is the company's OIDC provider.
   // Limited per client IP + username (after the body is parsed): a UI server logging many users in
-  // through one IP does not share a single bucket, and guessing one account is still capped.
+  // through one IP does not share a single bucket, and guessing one account is still capped. The
+  // username is normalized the same way it is validated, so " user" or "USER" is the same bucket.
   const loginLimit = {
     max: 5,
     timeWindow: '1 minute',
     hook: 'preHandler' as const,
-    keyGenerator: (request: { ip: string; body?: unknown }) => `${request.ip}|${String((request.body as { username?: unknown } | undefined)?.username ?? '')}`,
+    keyGenerator: (request: { ip: string; body?: unknown }) => `${request.ip}|${String((request.body as { username?: unknown } | undefined)?.username ?? '').trim().toLowerCase()}`,
   };
+  // And at most 20 failed logins per IP per minute across all usernames (password spraying).
+  const failedLoginsByIp = new FixedWindowCounter(20, 60_000);
   app.post('/auth/token', { config: { rateLimit: loginLimit } }, async (request, reply) => {
+    if (failedLoginsByIp.exceeded(request.ip)) return reply.code(429).send({ error: 'rate_limited', details: 'too many failed logins from this address' });
     const parsed = TokenRequestSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_request', details: z.flattenError(parsed.error).fieldErrors });
     const principal = deps.credentials.verify(parsed.data.username, parsed.data.password);
     if (!principal) {
+      failedLoginsByIp.hit(request.ip);
       deps.audit.write({ actor: parsed.data.username, action: 'auth.login_failed' });
       return reply.code(401).send({ error: 'invalid_credentials' });
     }

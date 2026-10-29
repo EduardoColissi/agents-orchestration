@@ -35,6 +35,17 @@ describe('authentication (FR6, FR10)', () => {
     // The bucket is per IP + username: another user behind the same IP (e.g. the UI server) still signs in.
     const other = await app.inject({ method: 'POST', url: '/auth/token', payload: { username: 'op.ana', password: 'demo-op.ana' } });
     expect(other.statusCode).toBe(200);
+    // Padding or case does not open a new bucket for the same account.
+    const padded = await app.inject({ method: 'POST', url: '/auth/token', payload: { username: ' CLIENTE1988 ', password: 'demo-cliente1988' } });
+    expect(padded.statusCode).toBe(429);
+  });
+
+  it('caps failed logins per IP across usernames (password spraying)', async () => {
+    const { app } = await buildTestApp(scriptedLLM({}));
+    const statuses: number[] = [];
+    for (let i = 0; i < 21; i++) statuses.push((await app.inject({ method: 'POST', url: '/auth/token', payload: { username: `user${i}`, password: 'guess' } })).statusCode);
+    expect(statuses.slice(0, 20).every((s) => s === 401)).toBe(true);
+    expect(statuses[20]).toBe(429);
   });
 
   it.each([
