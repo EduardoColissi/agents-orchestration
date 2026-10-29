@@ -54,4 +54,21 @@ describe('replanning: observe the specialist result, then decide (feedback gap 5
     expect(decideNext(['knowledge'], knowledge('Web search failed: the search provider blocked this request (bot challenge); live web data is unavailable', true))).toEqual({ after: 'knowledge', signal: 'live_data_unavailable', action: 'finish' });
     expect(decideNext(['knowledge'], knowledge('[1] Euro — https://x', false))).toBeNull();
   });
+
+  it('a live-data question with the search blocked ends without a human handoff or the "official sources" note', async () => {
+    const t = await buildTestApp(scriptedLLM({ router: [route({ route: 'knowledge' })] }));
+    t.deps.orchestrator.agents.knowledge.run = async () => ({
+      agent: 'knowledge',
+      answer: "I can't fetch live exchange rates right now.",
+      sources: [],
+      toolsUsed: ['web_search'],
+      usage: { inputTokens: 0, outputTokens: 0, webSearches: 0 },
+      evidence: [{ name: 'web_search', input: { query: 'euro' }, output: 'Web search failed: live web data is unavailable', isError: true }],
+    });
+    const body = await chat(t.app, "What's the euro exchange rate today?");
+    expect(body.replans).toEqual([{ after: 'knowledge', signal: 'live_data_unavailable', action: 'finish' }]);
+    expect(body.handoff.required).toBe(false);
+    expect(body.answer).toBe("I can't fetch live exchange rates right now.");
+    expect(t.deps.handoffs.list()).toHaveLength(0);
+  });
 });

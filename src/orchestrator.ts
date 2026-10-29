@@ -262,7 +262,10 @@ export class Orchestrator {
     const agentHandoff = results.find((r) => r.handoff)?.handoff;
     log.info({ stage: 'guardrail_output', handoff_reason: output.handoffReason ?? null }, 'output checked');
 
-    if (output.handoffReason === 'ungrounded_answer') {
+    // The replanner decided this answer is final (e.g. live data unavailable): no human queue item and
+    // no "no official sources" disclaimer, which is about Getnet content, not the weather.
+    const finished = turn.replans.some((r) => r.action === 'finish');
+    if (output.handoffReason === 'ungrounded_answer' && !finished) {
       answer += UNGROUNDED_NOTE[language] ?? UNGROUNDED_NOTE.en!;
       return this.finish(turn, log, started, traceId, usage, {
         answer, route: decision.route, agents: executed, results,
@@ -272,9 +275,7 @@ export class Orchestrator {
 
     // 5. Human handoff when an agent or the output check asks for it.
     const gap = output.handoffReason ?? (agentHandoff && agentHandoff.reason !== 'support_ticket_opened' ? agentHandoff.reason : null);
-    // The replanner decided this answer is final (e.g. live data unavailable): no human queue item.
-    const finished = turn.replans.some((r) => r.action === 'finish');
-    const handoffReason = finished && gap === 'knowledge_gap' ? null : gap;
+    const handoffReason = finished && (gap === 'knowledge_gap' || gap === 'ungrounded_answer') ? null : gap;
     if (handoffReason === 'customer_not_found') {
       // Offer a handoff instead of opening a ticket for an account that does not exist (FR7).
       return this.finish(turn, log, started, traceId, usage, {
