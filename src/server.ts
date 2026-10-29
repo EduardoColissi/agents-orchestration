@@ -31,7 +31,9 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(rateLimit, { global: false });
   registerAuth(app, deps.jwt);
 
-  app.get('/health', async () => ({ status: 'ok', knowledge_base_chunks: deps.knowledgeBaseSize }));
+  const local = deps.config.LLM_PROVIDER === 'ollama';
+  const models = { router: local ? deps.config.OLLAMA_ROUTER_MODEL : deps.config.ROUTER_MODEL, agent: local ? deps.config.OLLAMA_AGENT_MODEL : deps.config.AGENT_MODEL };
+  app.get('/health', async () => ({ status: 'ok', knowledge_base_chunks: deps.knowledgeBaseSize, provider: deps.config.LLM_PROVIDER, models }));
 
   // Demo identity provider (spec §3): in production this is the company's OIDC provider.
   app.post('/auth/token', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request, reply) => {

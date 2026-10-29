@@ -274,6 +274,6 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
 
   it('GET /health reports the knowledge base size', async () => {
     const { app } = await buildTestApp(scriptedLLM({}));
-    expect((await app.inject({ method: 'GET', url: '/health' })).json()).toEqual({ status: 'ok', knowledge_base_chunks: 4 });
+    expect((await app.inject({ method: 'GET', url: '/health' })).json()).toMatchObject({ status: 'ok', knowledge_base_chunks: 4, provider: 'ollama', models: { router: 'llama3.2:3b', agent: 'llama3.1:8b' } });
   });
 });
