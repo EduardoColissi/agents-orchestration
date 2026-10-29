@@ -7,7 +7,13 @@ import { AuditLog } from '../../src/store/audit.js';
 import { TicketStore } from '../../src/store/tickets.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'store-test-'));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+afterAll(() => {
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // Windows keeps the SQLite file locked until the process exits.
+  }
+});
 
 describe('SQLite store', () => {
   it('migrates once and keeps data when the file is reopened (restart)', () => {

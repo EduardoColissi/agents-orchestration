@@ -8,7 +8,7 @@ import { BLOCKED_MESSAGES, checkInput } from './guardrails/input.js';
 import { checkOutput } from './guardrails/output.js';
 import { detectLanguage } from './guardrails/language.js';
 import { maskPII } from './guardrails/pii.js';
-import { addUsage, emptyUsage, type Agent, type AgentName, type AgentResult, type Route, type Source, type TokenUsage } from './types.js';
+import { addUsage, emptyUsage, type Agent, type AgentName, type AgentResult, type Route, type Source, type TokenUsage, type ToolEvidence } from './types.js';
 import { dedupeSources } from './agents/toolLoop.js';
 
 export interface ChatRequest {
@@ -20,6 +20,7 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   trace_id: string;
+  conversation_id?: string;
   answer: string;
   route: Route;
   agents: AgentName[];
@@ -27,6 +28,30 @@ export interface ChatResponse {
   tools_used: string[];
   handoff: { required: boolean; reason: string | null; ticket_id: string | null };
   latency_ms: number;
+}
+
+/** What the turn left behind: persisted by the chat service, read by operators and the judge. */
+export interface TurnEvidence {
+  route_decision: RouteDecision | null;
+  standalone_query: string | null;
+  steps: Array<{ agent: AgentName; tools: ToolEvidence[] }>;
+  sources: Source[];
+}
+
+export interface OrchestratorTurn {
+  response: ChatResponse;
+  /** The merchant message after PII masking (what gets persisted). */
+  maskedMessage: string;
+  /** false for blocked turns: stored for audit, never sent back to an LLM. */
+  inContext: boolean;
+  evidence: TurnEvidence;
+}
+
+interface TurnState {
+  message: string;
+  decision: RouteDecision | null;
+  standaloneQuery: string | null;
+  results: AgentResult[];
 }
 
 export interface OrchestratorDeps {
@@ -52,11 +77,28 @@ const UNGROUNDED_NOTE: Record<string, string> = {
 export class Orchestrator {
   constructor(private readonly deps: OrchestratorDeps) {}
 
-  async handle(request: ChatRequest): Promise<ChatResponse> {
+  async handle(request: ChatRequest): Promise<OrchestratorTurn> {
+    const turn: TurnState = { message: request.message, decision: null, standaloneQuery: null, results: [] };
+    const response = await this.run(request, turn);
+    return {
+      response,
+      maskedMessage: turn.message,
+      inContext: response.route !== 'blocked',
+      evidence: {
+        route_decision: turn.decision,
+        standalone_query: turn.standaloneQuery,
+        steps: turn.results.map((r) => ({ agent: r.agent, tools: r.evidence ?? [] })),
+        sources: response.sources,
+      },
+    };
+  }
+
+  private async run(request: ChatRequest, turn: TurnState): Promise<ChatResponse> {
     const started = performance.now();
     const traceId = request.traceId ?? randomUUID();
     const log = this.deps.logger.child({ trace_id: traceId, user_id: request.userId });
     const { text: message, found: piiFound } = maskPII(request.message);
+    turn.message = message;
     const guessedLanguage = detectLanguage(message);
     const executed: AgentName[] = [];
     let usage: TokenUsage = emptyUsage();
@@ -67,7 +109,7 @@ export class Orchestrator {
     const input = checkInput(message, request.userId);
     if (!input.allowed) {
       log.warn({ stage: 'guardrail_input', category: input.category, reason: input.reason }, 'request blocked');
-      return this.finish(log, started, traceId, usage, {
+      return this.finish(turn, log, started, traceId, usage, {
         answer: BLOCKED_MESSAGES[guessedLanguage] ?? BLOCKED_MESSAGES.en!,
         route: 'blocked',
         agents: executed,
@@ -81,13 +123,14 @@ export class Orchestrator {
     const routed = await timed(() => this.deps.router.decide(message, guessedLanguage));
     const { decision, fallback, error } = routed.value;
     usage = addUsage(usage, routed.value.usage);
+    turn.decision = fallback ? null : decision;
     executed.push('router');
     log.info({ stage: 'router', agent: 'router', latency_ms: routed.ms, ...routeLog(decision), fallback, error, tokens: routed.value.usage }, 'routing decision');
 
     const language = normalizeLanguage(decision.language) ?? guessedLanguage;
 
     if (decision.route === 'blocked') {
-      return this.finish(log, started, traceId, usage, {
+      return this.finish(turn, log, started, traceId, usage, {
         answer: BLOCKED_MESSAGES[language] ?? BLOCKED_MESSAGES.en!,
         route: 'blocked',
         agents: executed,
@@ -105,7 +148,7 @@ export class Orchestrator {
           ? 'low_confidence'
           : null;
     if (escalationReason) {
-      return this.escalate(log, started, traceId, usage, executed, { userId: request.userId, language, reason: escalationReason, message, results: [] });
+      return this.escalate(turn, log, started, traceId, usage, executed, { userId: request.userId, language, reason: escalationReason, message, results: [] });
     }
 
     // 3. Execute the plan, passing earlier results forward (FR2).
@@ -127,7 +170,7 @@ export class Orchestrator {
         if (run.value.handoff && run.value.handoff.reason !== 'support_ticket_opened') break;
       } catch (err) {
         log.error({ stage: 'agent', agent: step, err }, 'agent failed');
-        return this.escalate(log, started, traceId, usage, executed, { userId: request.userId, language, reason: 'agent_error', message, results });
+        return this.escalate(turn, log, started, traceId, usage, executed, { userId: request.userId, language, reason: 'agent_error', message, results });
       }
     }
 
@@ -142,7 +185,7 @@ export class Orchestrator {
 
     if (output.handoffReason === 'ungrounded_answer') {
       answer += UNGROUNDED_NOTE[language] ?? UNGROUNDED_NOTE.en!;
-      return this.finish(log, started, traceId, usage, {
+      return this.finish(turn, log, started, traceId, usage, {
         answer, route: decision.route, agents: executed, results,
         handoff: { required: true, reason: 'ungrounded_answer', ticket_id: null }, language,
       });
@@ -152,7 +195,7 @@ export class Orchestrator {
     const handoffReason = output.handoffReason ?? (agentHandoff && agentHandoff.reason !== 'support_ticket_opened' ? agentHandoff.reason : null);
     if (handoffReason === 'customer_not_found') {
       // Offer a handoff instead of opening a ticket for an account that does not exist (FR7).
-      return this.finish(log, started, traceId, usage, {
+      return this.finish(turn, log, started, traceId, usage, {
         answer, route: decision.route, agents: executed, results,
         handoff: { required: true, reason: handoffReason, ticket_id: null }, language,
       });
@@ -161,35 +204,38 @@ export class Orchestrator {
       const existingTicketId = results.find((r) => r.handoff?.ticketId)?.handoff?.ticketId;
       const escalation = await this.deps.escalation.handoff({ userId: request.userId, language, reason: handoffReason, message, ...(existingTicketId ? { existingTicketId } : {}) });
       executed.push('escalation');
-      return this.finish(log, started, traceId, usage, {
+      return this.finish(turn, log, started, traceId, usage, {
         answer: `${answer}\n\n${escalation.answer}`, route: decision.route, agents: executed, results: [...results, escalation],
         handoff: { required: true, reason: handoffReason, ticket_id: escalation.handoff!.ticketId ?? null }, language,
       });
     }
 
-    return this.finish(log, started, traceId, usage, {
+    return this.finish(turn, log, started, traceId, usage, {
       answer, route: decision.route, agents: executed, results,
       handoff: { required: false, reason: agentHandoff?.reason ?? null, ticket_id: agentHandoff?.ticketId ?? null }, language,
     });
   }
 
   private async escalate(
+    turn: TurnState,
     log: Logger, started: number, traceId: string, usage: TokenUsage, executed: AgentName[],
     p: { userId: string; language: string; reason: HandoffReason; message: string; results: AgentResult[] },
   ): Promise<ChatResponse> {
     const result = await this.deps.escalation.handoff(p);
     executed.push('escalation');
     log.info({ stage: 'agent', agent: 'escalation', reason: p.reason, ticket_id: result.handoff?.ticketId }, 'escalated to human');
-    return this.finish(log, started, traceId, usage, {
+    return this.finish(turn, log, started, traceId, usage, {
       answer: result.answer, route: 'escalation', agents: executed, results: [...p.results, result],
       handoff: { required: true, reason: p.reason, ticket_id: result.handoff?.ticketId ?? null }, language: p.language,
     });
   }
 
   private async finish(
+    turn: TurnState,
     log: Logger, started: number, traceId: string, usage: TokenUsage,
     r: { answer: string; route: Route; agents: AgentName[]; results: AgentResult[]; handoff: ChatResponse['handoff']; language: string },
   ): Promise<ChatResponse> {
+    turn.results = r.results;
     // Personality stage: one brand voice for every answer, facts guaranteed unchanged.
     const styled = await timed(() => this.deps.personality.apply(r.answer, r.language));
     usage = addUsage(usage, styled.value.usage);

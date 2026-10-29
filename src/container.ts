@@ -17,6 +17,8 @@ import { createLogger, type Logger } from './observability/logger.js';
 import { openDb, type Db } from './store/db.js';
 import { AuditLog } from './store/audit.js';
 import { TicketStore } from './store/tickets.js';
+import { ConversationStore } from './store/conversations.js';
+import { ChatService } from './chat/service.js';
 import { JwtService } from './auth/jwt.js';
 import { CredentialStore } from './auth/credentials.js';
 import { resolveJwtSecret } from './auth/secret.js';
@@ -30,6 +32,8 @@ export interface AppDeps {
   audit: AuditLog;
   jwt: JwtService;
   credentials: CredentialStore;
+  conversations: ConversationStore;
+  chat: ChatService;
   now: () => Date;
 }
 
@@ -101,5 +105,8 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
     confidenceThreshold: config.ROUTER_CONFIDENCE_THRESHOLD,
   });
 
-  return { config, orchestrator, logger, knowledgeBaseSize: store.size, db, audit, jwt, credentials, now };
+  const conversations = new ConversationStore(db, now);
+  const chat = new ChatService({ db, orchestrator, conversations, audit });
+
+  return { config, orchestrator, logger, knowledgeBaseSize: store.size, db, audit, jwt, credentials, conversations, chat, now };
 }

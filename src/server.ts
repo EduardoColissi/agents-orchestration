@@ -4,11 +4,14 @@ import rateLimit from '@fastify/rate-limit';
 import { z } from 'zod';
 import type { AppDeps } from './container.js';
 import { registerAuth, requireRole } from './auth/plugin.js';
+import { ConversationBusyError, ConversationNotFoundError } from './chat/service.js';
 
 export const ChatRequestSchema = z.object({
   message: z.string().trim().min(1, 'message must not be empty').max(2000),
   /** Kept for compatibility with the original contract: an assertion, never the identity (FR8). */
   user_id: z.string().trim().min(1).max(64).regex(/^[\w.@-]+$/, 'user_id has invalid characters').optional(),
+  /** Omit to start a new conversation; the response returns its id. */
+  conversation_id: z.uuid().optional(),
 });
 
 const TokenRequestSchema = z.object({
@@ -46,10 +49,14 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
       deps.audit.write({ actor: principal.sub, action: 'auth.user_mismatch', details: { claimed_user_id: parsed.data.user_id } });
       return reply.code(403).send({ error: 'user_mismatch', trace_id: request.id });
     }
-    return deps.orchestrator.handle({ message: parsed.data.message, userId: principal.sub, traceId: request.id });
+    return deps.chat.chat(principal, { message: parsed.data.message, traceId: request.id, ...(parsed.data.conversation_id ? { conversationId: parsed.data.conversation_id } : {}) });
   });
 
+  app.get<{ Params: { id: string } }>('/conversations/:id', { preHandler: requireRole('merchant') }, async (request) => deps.chat.view(request.principal!, request.params.id));
+
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
+    if (error instanceof ConversationNotFoundError) return reply.code(404).send({ error: 'conversation_not_found', trace_id: request.id });
+    if (error instanceof ConversationBusyError) return reply.code(409).send({ error: 'conversation_busy', trace_id: request.id });
     // Malformed JSON, wrong content type, body too large, rate limit…
     if (error.statusCode !== undefined && error.statusCode >= 400 && error.statusCode < 500) {
       return reply.code(error.statusCode).send({ error: error.statusCode === 429 ? 'rate_limited' : 'invalid_request', details: error.message });
