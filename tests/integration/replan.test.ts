@@ -21,14 +21,15 @@ describe('replanning: observe the specialist result, then decide (feedback gap 5
     expect(String(llm.calls.find((c) => kindOf(c) === 'knowledge')!.messages[0]!.content)).toContain('<account_findings agent="support">');
   });
 
-  it('gives Knowledge the offline-machine guide searched in code, whatever query the model would pick', async () => {
+  it('gives Knowledge the offline-machine guide searched in code, and joins the account facts and the guidance in code', async () => {
     const llm = scriptedLLM({
       router: [route({ route: 'support', plan: ['support'] })],
       support: [{ toolCalls: [{ name: 'get_terminal_status', input: {} }] }, { text: 'Your Get Smart GS-1988-0001 is offline.' }],
-      knowledge: [{ text: 'It is offline: restart it, check the Wi-Fi router and switch to the 4G chip.' }],
+      knowledge: [{ text: 'Restart it, check the Wi-Fi router and switch to the 4G chip.' }],
     });
     const { app } = await buildTestApp(llm);
     const body = await chat(app, 'Is my card machine online right now?');
+    expect(body.answer).toBe('Your Get Smart GS-1988-0001 is offline.\n\nRestart it, check the Wi-Fi router and switch to the 4G chip.');
     const prompt = String(llm.calls.find((c) => kindOf(c) === 'knowledge')!.messages[0]!.content);
     expect(prompt).toContain('<knowledge_base_excerpts');
     expect(prompt).toContain('Reinicie a maquininha');

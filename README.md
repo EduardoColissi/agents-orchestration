@@ -100,7 +100,7 @@ npm run ingest             # optional: rebuild data/index.json from the web
 ### Tests and evaluation
 
 ```bash
-npm test                   # 160 tests, offline, scripted fake LLM, SQLite in memory (Node >= 24)
+npm test                   # 161 tests, offline, scripted fake LLM, SQLite in memory (Node >= 24)
 npm run typecheck
 npm run eval -- --runs 3   # semantic evaluation of the running API (EVAL_BASE_URL, default localhost:3000)
 npm run eval -- --runs 1 --only 3,5,MT1,R1,H2   # a few cases (partial runs skip the baseline gate)
@@ -286,7 +286,7 @@ PII (cards with Luhn, CPF, CNPJ, e-mail) masked before logs, LLM and storage · 
 - **Resume from a checkpoint** instead of re-running the agent: the provider never changes mid-conversation, so the exact run can continue, without repeating earlier tool calls (5–15 s saved per resume on the 8B).
 - **The conversation is not paused** while a handoff is open: the interrupt belongs to the request; one open handoff per conversation.
 - **Deterministic where possible**: escalation, compaction, replanning, approval gating, language detection, templates. LLMs route, write and judge.
-- **A "not found" does not erase what was found**: when Support answered from the account and Knowledge then found no official guidance, Support's answer is the final one and nobody is queued. Testing the feedback's own example ("Minha maquininha está offline.") showed the opposite: "I couldn't find…" plus a needless handoff. Causes and fixes: the Portuguese search missed the English-only playbook (now bilingual), and the 8B searched for the wrong thing ("máquina de cartão online"), so an offline machine now brings its guide searched in code — the same structured signal the replanner uses.
+- **Support → Knowledge answers are joined in code**: the account facts written by Support (the agent that read the tools), then the guidance written by Knowledge, which is told not to repeat them — asked to merge both, the 8B dropped the serial, the Wi-Fi and the 4G status. Sentences about tickets are removed from the facts when no ticket was opened in the turn (the 8B promised one, or quoted an invented number, without calling the tool). **A "not found" does not erase what was found**: when Knowledge found no guidance, Support's answer stands alone and nobody is queued. Testing the feedback's own example ("Minha maquininha está offline.") showed the opposite: "I couldn't find…" plus a needless handoff. Causes and fixes: the Portuguese search missed the English-only playbook (now bilingual), and the 8B searched for the wrong thing ("máquina de cartão online"), so an offline machine now brings its guide searched in code — the same structured signal the replanner uses.
 - **Local models need structure**: constrained decoding (`format`) for every structured output, argument coercion, and a constrained call to propose the replacement when the 8B does not.
 
 ## Limitations and next steps

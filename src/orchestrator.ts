@@ -253,9 +253,10 @@ export class Orchestrator {
       }
     }
 
-    // A "not found" from Knowledge does not erase what Support found in the account: when Support
-    // already answered, its answer is final, no knowledge-gap handoff is opened, and the pages
-    // Knowledge searched in vain are not cited as sources.
+    // Support → Knowledge: the final answer is Support's account facts followed by Knowledge's
+    // guidance, joined in code — asked to merge them, the 8B dropped the facts (serial, Wi-Fi, 4G).
+    // A "not found" from Knowledge does not erase those facts either: Support's answer stands alone,
+    // no knowledge-gap handoff is opened, and the pages searched in vain are not cited.
     const last = results.at(-1)!;
     const support = results.find((r) => r.agent === 'support' && r.answer.trim() && (!r.handoff || r.handoff.reason === 'support_ticket_opened'));
     const supportStands = last.agent === 'knowledge' && last.notFound === true && support !== undefined;
@@ -263,7 +264,11 @@ export class Orchestrator {
       results[results.length - 1] = { ...last, sources: [] };
       log.info({ stage: 'synthesis' }, 'knowledge found nothing; the support answer stands');
     }
-    const final = supportStands ? support : last;
+    const final = supportStands
+      ? support
+      : last.agent === 'knowledge' && support !== undefined
+        ? { ...last, answer: [withoutTicketTalk(support.answer, support.handoff?.reason === 'support_ticket_opened'), last.answer].filter(Boolean).join('\n\n') }
+        : last;
     const allSources = dedupeSources(results.flatMap((r) => r.sources));
 
     // 4. Output guardrail.
@@ -381,6 +386,23 @@ export class Orchestrator {
 }
 
 const routeLog = (d: RouteDecision) => ({ route: d.route, plan: d.plan, confidence: d.confidence, language: d.language, reason: d.reason });
+
+const TICKET_TALK = /\b(ticket|tickets|chamado|chamados|protocolo|protocol)\b/i;
+
+/**
+ * Support's account findings without sentences about tickets when none was opened this turn: the 8B
+ * promised one, or quoted an invented number, without calling the tool. In a composed answer the
+ * guidance that follows already says when to open a ticket.
+ */
+export function withoutTicketTalk(text: string, ticketOpened: boolean): string {
+  if (ticketOpened) return text.trim();
+  return text
+    .split('\n')
+    .map((line) => line.split(/(?<=[.!?])[ \t]+/).filter((sentence) => !TICKET_TALK.test(sentence)).join(' '))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
 /** "pt-BR" / "PT" → "pt"; anything that is not a 2-letter code is ignored. */
 export function normalizeLanguage(code: string | undefined): string | null {

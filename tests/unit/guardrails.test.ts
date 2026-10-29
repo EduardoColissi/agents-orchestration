@@ -3,7 +3,7 @@ import { checkInput } from '../../src/guardrails/input.js';
 import { luhnValid, maskPII } from '../../src/guardrails/pii.js';
 import { detectLanguage } from '../../src/guardrails/language.js';
 import { normalizePlan } from '../../src/agents/router.js';
-import { normalizeLanguage } from '../../src/orchestrator.js';
+import { normalizeLanguage, withoutTicketTalk } from '../../src/orchestrator.js';
 
 describe('maskPII', () => {
   it('masks Luhn-valid card numbers, CPF, CNPJ and e-mails', () => {
@@ -77,5 +77,15 @@ describe('normalizeLanguage', () => {
     expect(normalizeLanguage('pt-BR')).toBe('pt');
     expect(normalizeLanguage('EN')).toBe('en');
     expect(normalizeLanguage('portuguese')).toBeNull();
+  });
+});
+
+describe('composed answers', () => {
+  it('drops ticket promises and invented numbers from the account findings when no ticket was opened', () => {
+    const pt = 'Sua maquininha está offline desde 18h45. O Wi-Fi está sem sinal. Vou criar um ticket para a equipe verificar. O número do ticket é #2026-10-29-001.';
+    expect(withoutTicketTalk(pt, false)).toBe('Sua maquininha está offline desde 18h45. O Wi-Fi está sem sinal.');
+    const en = 'Your machine GS-1988-0001 is offline.\n\nNext step: restart it. If it persists, I can open a support ticket for you.';
+    expect(withoutTicketTalk(en, false)).toBe('Your machine GS-1988-0001 is offline.\n\nNext step: restart it.');
+    expect(withoutTicketTalk('Opened ticket TCK-1A2B3C4D5E6F.', true)).toBe('Opened ticket TCK-1A2B3C4D5E6F.');
   });
 });
