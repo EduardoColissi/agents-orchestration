@@ -64,9 +64,10 @@ export class KnowledgeAgent implements Agent {
     const budget = this.options.webSearchMaxUses;
     const webTool = !serverSearch && budget > 0 ? createWebSearchTool(this.options.webSearch, budget) : null;
     // A live-data question (Router flag or deterministic detector): the web search runs in code with
-    // the merchant's question, so the answer never depends on the 8B picking the right tool — asked for
-    // the euro rate inside a conversation, it searched the knowledge base and then invented a value.
-    // The model keeps the rest of the budget to refine the query and never sees the knowledge base tool.
+    // a query built for it, so the answer never depends on the 8B picking the tool or the wording —
+    // asked for the euro rate inside a conversation, it searched the knowledge base and invented a
+    // value; given a second search, it asked in English, got a converter's "€1 = €1" and copied it.
+    // The model gets the results and no tool at all: it answers from them or says it could not.
     const liveData = ctx.liveData === true && budget > 0;
     const liveQuery = liveDataQuery(ctx.query);
     const live = liveData && webTool ? await this.call(webTool, 'web_search', liveQuery) : null;
@@ -82,7 +83,7 @@ export class KnowledgeAgent implements Agent {
         model: this.options.model,
         system: knowledgePrompt({ today: localDate(now), language: ctx.language, hasPreviousContext: previous.length > 0, webSearchAvailable, liveData: webResults !== '' }),
         userMessage,
-        tools: liveData ? (webSearchAvailable && webTool ? [webTool] : []) : [this.knowledgeBaseTool, ...(webSearchAvailable && webTool ? [webTool] : [])],
+        tools: liveData ? [] : [this.knowledgeBaseTool, ...(webSearchAvailable && webTool ? [webTool] : [])],
         ...(webSearchAvailable && serverSearch ? { webSearch: { maxUses: budget } } : {}),
         maxIterations: this.options.maxIterations,
         maxTokens: 1200,

@@ -269,8 +269,8 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     const body = (await post(app, "What's the euro exchange rate today?")).json();
     const knowledgeCall = llm.calls.find((c) => kindOf(c) === 'knowledge')!;
     expect(knowledgeCall.webSearch).toBeUndefined();
-    // The search already ran in code with the merchant's question; the knowledge base is not offered.
-    expect(knowledgeCall.tools!.map((t) => t.name)).toEqual(['web_search']);
+    // The search already ran in code; the model gets its results and no tool (neither the knowledge base nor a second search).
+    expect(knowledgeCall.tools).toEqual([]);
     // An exchange rate is searched in Portuguese against the real, whatever the merchant's language.
     expect(String(knowledgeCall.messages[0]!.content)).toContain('<web_search_results query="cotação do euro hoje em reais">');
     expect(body.tools_used).toEqual(['web_search']);
