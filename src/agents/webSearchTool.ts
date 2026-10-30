@@ -88,7 +88,7 @@ export function createWebSearchTool(search: WebSearch = searchDuckDuckGo, maxUse
   let uses = 0;
   return defineTool(
     'web_search',
-    'Search the public web for current, general-purpose information (weather, exchange rates, news). Not for Getnet products. Returns titles, URLs and snippets.',
+    'Search the public web for current, general-purpose information (weather, exchange rates, news). Not for Getnet products. The merchant is in Brazil: ask for exchange rates against the Brazilian real (BRL). Returns titles, URLs and snippets.',
     z.object({ query: z.string().min(2).max(200) }),
     async ({ query }) => {
       if (uses >= maxUses) return { content: 'Web search budget for this request is exhausted; answer with what you have.', isError: true };
