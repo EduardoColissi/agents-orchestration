@@ -259,18 +259,37 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     expect(llm.calls.find((c) => kindOf(c) === 'personality')!.messages[0]!.content).toContain('<draft>');
   });
 
-  it('uses a local web search tool when the provider has no server-side search (Ollama mode)', async () => {
+  it('runs the web search in code for a live-data question when the provider has no server-side search (Ollama mode)', async () => {
     const llm = scriptedLLM({
       router: [route({ route: 'knowledge' })],
-      knowledge: [{ toolCalls: [{ name: 'web_search', input: { query: 'cotação euro hoje' } }] }, { text: 'Euro is around R$ 6,20 today.' }],
+      knowledge: [{ text: 'Euro is around R$ 6,20 today.' }],
     });
     llm.capabilities = { serverWebSearch: false, forcedToolChoice: false };
     const { app } = await buildTestApp(llm);
     const body = (await post(app, "What's the euro exchange rate today?")).json();
     const knowledgeCall = llm.calls.find((c) => kindOf(c) === 'knowledge')!;
     expect(knowledgeCall.webSearch).toBeUndefined();
-    expect(knowledgeCall.tools!.map((t) => t.name)).toEqual(['search_knowledge_base', 'web_search']);
-    expect(body.tools_used).toContain('web_search');
+    // The search already ran in code with the merchant's question; the knowledge base is not offered.
+    expect(knowledgeCall.tools!.map((t) => t.name)).toEqual(['web_search']);
+    expect(String(knowledgeCall.messages[0]!.content)).toContain('<web_search_results query="What\'s the euro exchange rate today?">');
+    expect(body.tools_used).toEqual(['web_search']);
+    expect(body.sources).toEqual([{ title: 'Euro hoje — Câmbio Exemplo', url: 'https://cambio.example/euro' }]);
+    expect(body.answer).toBe('Euro is around R$ 6,20 today.');
+    expect(body.handoff.required).toBe(false);
+  });
+
+  it('redacts an amount that no evidence contains and asks a person (the 8B invented "R$ 5,92" for the euro)', async () => {
+    const llm = scriptedLLM({
+      router: [route({ route: 'knowledge', language: 'pt' })],
+      knowledge: [{ text: 'A cotação do euro hoje em reais é de R$ 5,92 na venda.' }],
+    });
+    llm.capabilities = { serverWebSearch: false, forcedToolChoice: false };
+    const { app } = await buildTestApp(llm);
+    const body = (await post(app, 'qual o valor do euro hoje?')).json();
+    expect(body.answer).toContain('R$ [valor não confirmado] na venda');
+    expect(body.answer).not.toContain('5,92');
+    expect(body.answer).toContain('foi omitido');
+    expect(body.handoff).toMatchObject({ required: true, reason: 'ungrounded_answer', kind: 'assist' });
   });
 
   it('GET /health reports the knowledge base size', async () => {

@@ -10,6 +10,12 @@ import { HashingEmbedder } from '../src/rag/embedder.js';
 import { buildIndex } from '../src/rag/ingest.js';
 import type { RouteDecision } from '../src/agents/router.js';
 import { JwtService, type Role } from '../src/auth/jwt.js';
+import type { WebSearch } from '../src/agents/webSearchTool.js';
+
+/** The client-side web search of the test app: a fixed exchange-rate page, no network. */
+export const FAKE_WEB_SEARCH: WebSearch = async (query) => [
+  { title: 'Euro hoje — Câmbio Exemplo', url: 'https://cambio.example/euro', snippet: `Resultado para "${query}": euro comercial hoje R$ 6,20 na venda; dólar R$ 5,40.` },
+];
 
 export const TEST_JWT = { secret: 'test-secret-test-secret-test-secret-0123', issuer: 'getnet-support', audience: 'getnet-support-api', ttlSeconds: 3600 };
 const testJwt = new JwtService(TEST_JWT);
@@ -66,11 +72,11 @@ export function scriptedLLM(script: Partial<Record<AgentKind, Array<FakeReply | 
   });
 }
 
-export async function buildTestApp(llm: FakeLLM, opts: { emptyKb?: boolean; personality?: boolean; dbPath?: string; now?: () => Date } = {}) {
+export async function buildTestApp(llm: FakeLLM, opts: { emptyKb?: boolean; personality?: boolean; dbPath?: string; now?: () => Date; webSearch?: WebSearch } = {}) {
   const config = loadConfig({ LOG_LEVEL: 'silent', ROUTER_CONFIDENCE_THRESHOLD: '0.6', PERSONALITY_ENABLED: String(opts.personality ?? false), AUTH_JWT_SECRET: TEST_JWT.secret, DB_PATH: opts.dbPath ?? ':memory:' });
   const repo = new MockCustomerRepository(JSON.parse(readFileSync('data/customers.json', 'utf8')), FIXED_NOW);
   const embedder = new HashingEmbedder();
   const store = await buildIndex(opts.emptyKb ? [] : KB_DOCS, embedder);
-  const deps = buildDependencies({ config, llm, repo, store, embedder, now: opts.now ?? FIXED_NOW, logger: pino({ level: 'silent' }) });
+  const deps = buildDependencies({ config, llm, repo, store, embedder, now: opts.now ?? FIXED_NOW, logger: pino({ level: 'silent' }), webSearch: opts.webSearch ?? FAKE_WEB_SEARCH });
   return { app: await buildServer(deps), repo, llm, deps };
 }

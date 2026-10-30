@@ -12,6 +12,8 @@ export const RouteDecisionSchema = z.object({
   reason: z.string().transform((r) => r.slice(0, 300)),
   /** The message rewritten as a self-contained question (follow-ups resolved from the context). */
   standalone_query: z.string().transform((q) => q.slice(0, 500)),
+  /** The answer needs fresh public data from outside Getnet (weather, exchange rates, news): Knowledge runs the web search in code. */
+  live_data: z.boolean().default(false),
 });
 
 export type RouteDecision = z.infer<typeof RouteDecisionSchema>;
@@ -55,7 +57,7 @@ export class RouterAgent {
 
   private fallback(language: string, usage: TokenUsage, error: string): RouterOutcome {
     return {
-      decision: { route: 'escalation', plan: [], confidence: 0, language, reason: 'router_failure', standalone_query: '' },
+      decision: { route: 'escalation', plan: [], confidence: 0, language, reason: 'router_failure', standalone_query: '', live_data: false },
       usage,
       fallback: true,
       error,

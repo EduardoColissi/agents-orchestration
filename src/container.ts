@@ -4,7 +4,7 @@ import { AnthropicClient } from './llm/anthropic.js';
 import { OllamaClient } from './llm/ollama.js';
 import { RouterAgent } from './agents/router.js';
 import { KnowledgeAgent } from './agents/knowledge.js';
-import { selectWebSearch } from './agents/webSearchTool.js';
+import { selectWebSearch, type WebSearch } from './agents/webSearchTool.js';
 import { SupportAgent } from './agents/support.js';
 import { EscalationAgent } from './agents/escalation.js';
 import { PersonalityStage } from './agents/personality.js';
@@ -57,6 +57,8 @@ export interface BuildOptions {
   db?: Db;
   logger?: Logger;
   now?: () => Date;
+  /** Tests: the client-side web search, so no test reaches the network. */
+  webSearch?: WebSearch;
 }
 
 /** Composition root: the only place that knows concrete implementations. Tests inject fakes. */
@@ -95,7 +97,7 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
   });
   if (retriever.isEmpty) logger.warn({ index: config.INDEX_PATH }, 'knowledge base is empty — run `npm run ingest`');
 
-  const webSearch = selectWebSearch(config.BRAVE_SEARCH_API_KEY || undefined);
+  const webSearch = opts.webSearch ? { name: 'duckduckgo' as const, search: opts.webSearch } : selectWebSearch(config.BRAVE_SEARCH_API_KEY || undefined);
   // Claude searches server-side with its native tool; the client-side search only exists for providers without one.
   const webSearchProvider = llm.capabilities.serverWebSearch ? ('server-side' as const) : webSearch.name;
 

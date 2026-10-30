@@ -12,6 +12,7 @@ import { addUsage, emptyUsage, type Agent, type AgentName, type AgentResult, typ
 import { dedupeSources } from './agents/toolLoop.js';
 import { newHandoffId, type HandoffKind } from './store/handoffs.js';
 import { decideNext, MAX_PLAN_STEPS, type PlanStep, type Replan } from './orchestration/replanner.js';
+import { looksLikeLiveData } from './orchestration/liveData.js';
 import type { Span } from './store/spans.js';
 
 export interface ChatRequest {
@@ -104,6 +105,12 @@ const UNGROUNDED_NOTE: Record<string, string> = {
   en: "\n\n_I couldn't find official sources confirming this answer; please confirm with Getnet customer service._",
 };
 
+const UNVERIFIED_VALUE_NOTE: Record<string, string> = {
+  pt: '\n\n_Um valor desta resposta não consta nas fontes consultadas e foi omitido._',
+  es: '\n\n_Un valor de esta respuesta no consta en las fuentes consultadas y fue omitido._',
+  en: '\n\n_A value in this answer was not found in the sources consulted and was left out._',
+};
+
 /**
  * Orchestrates one request: input guardrail → Router → plan execution (agents called in
  * sequence with a shared context) → output guardrail → optional human handoff.
@@ -183,7 +190,10 @@ export class Orchestrator {
       });
     }
     executed.push('router');
-    log.info({ stage: 'router', agent: 'router', latency_ms: routed.ms, ...routeLog(decision), fallback, error, tokens: routed.value.usage }, 'routing decision');
+    // Live data (weather, exchange rates, news): the Router's flag, or the deterministic detector when
+    // the question carries the words — then Knowledge runs the web search in code.
+    const liveData = decision.live_data || looksLikeLiveData(query) || looksLikeLiveData(message);
+    log.info({ stage: 'router', agent: 'router', latency_ms: routed.ms, ...routeLog(decision), live_data: liveData, fallback, error, tokens: routed.value.usage }, 'routing decision');
 
     // The deterministic detector wins when the text carries evidence (pt/es words, or a sentence
     // with none of them = English); the Router only decides for very short follow-ups.
@@ -222,7 +232,7 @@ export class Orchestrator {
       const agent = this.deps.agents[step];
       try {
         const run = await timed(() =>
-          agent.run({ traceId, userId: request.userId, message, history: request.context ?? '', query, language, previous: [...results], nextSteps: plan.slice(index + 1) }),
+          agent.run({ traceId, userId: request.userId, message, history: request.context ?? '', query, language, previous: [...results], nextSteps: plan.slice(index + 1), liveData }),
         );
         results.push(run.value);
         executed.push(step);
@@ -271,16 +281,19 @@ export class Orchestrator {
         : last;
     const allSources = dedupeSources(results.flatMap((r) => r.sources));
 
-    // 4. Output guardrail.
-    const output = checkOutput(decision.route, final, allSources.length);
+    // 4. Output guardrail: sources, and every amount in the answer present in the turn's evidence.
+    const evidenceText = results.flatMap((r) => (r.evidence ?? []).map((e) => e.output)).join('\n');
+    const output = checkOutput(decision.route, final, allSources.length, evidenceText, language);
     let answer = output.answer;
     const agentHandoff = results.find((r) => r.handoff)?.handoff;
-    log.info({ stage: 'guardrail_output', handoff_reason: output.handoffReason ?? null }, 'output checked');
+    log.info({ stage: 'guardrail_output', handoff_reason: output.handoffReason ?? null, redacted_values: output.redactedValues ?? [] }, 'output checked');
+    if (output.redactedValues?.length) answer += UNVERIFIED_VALUE_NOTE[language] ?? UNVERIFIED_VALUE_NOTE.en!;
 
     // The replanner decided this answer is final (e.g. live data unavailable): no human queue item and
     // no "no official sources" disclaimer, which is about Getnet content, not the weather.
     const finished = turn.replans.some((r) => r.action === 'finish');
-    if (output.handoffReason === 'ungrounded_answer' && !finished) {
+    // No source at all: flagged, not queued. A redacted value goes through the human queue below.
+    if (output.handoffReason === 'ungrounded_answer' && !output.redactedValues?.length && !finished) {
       answer += UNGROUNDED_NOTE[language] ?? UNGROUNDED_NOTE.en!;
       return this.finish(turn, log, started, traceId, usage, {
         answer, route: decision.route, agents: executed, results,

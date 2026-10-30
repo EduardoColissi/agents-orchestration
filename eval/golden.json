@@ -238,6 +238,22 @@
       ]
     },
     {
+      "id": "MT3",
+      "category": "web",
+      "user": "cliente1988",
+      "turns": [
+        "qual o valor do euro hoje?",
+        "whats the euro exchange rate today?"
+      ],
+      "expect": {
+        "route": "knowledge",
+        "tools_any": ["web_search"],
+        "requires_sources": true,
+        "handoff": false
+      },
+      "reference_facts": []
+    },
+    {
       "id": "MT2",
       "category": "multi-turn",
       "user": "cliente1988",

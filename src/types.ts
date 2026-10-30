@@ -40,6 +40,8 @@ export interface AgentContext {
   previous: AgentResult[];
   /** Agents that will run after this one in the same plan. */
   nextSteps: AgentName[];
+  /** The question needs fresh public data (Router flag or deterministic detector): Knowledge searches the web in code. */
+  liveData?: boolean;
 }
 
 /** One executed tool call, kept as evidence for operators and the evaluation judge. */

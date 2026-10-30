@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { checkInput } from '../../src/guardrails/input.js';
 import { luhnValid, maskPII } from '../../src/guardrails/pii.js';
 import { detectLanguage } from '../../src/guardrails/language.js';
-import { normalizePlan } from '../../src/agents/router.js';
+import { normalizePlan, RouteDecisionSchema } from '../../src/agents/router.js';
+import { checkOutput, redactUngroundedAmounts } from '../../src/guardrails/output.js';
+import { looksLikeLiveData } from '../../src/orchestration/liveData.js';
 import { composeAnswer, normalizeLanguage, withoutTicketTalk } from '../../src/orchestrator.js';
 
 describe('maskPII', () => {
@@ -64,11 +66,12 @@ describe('detectLanguage', () => {
 
 describe('normalizePlan', () => {
   it('makes the plan start with the route and clears it for terminal routes', () => {
-    expect(normalizePlan({ route: 'support', plan: ['knowledge'], confidence: 1, language: 'en', reason: '', standalone_query: '' }).plan).toEqual(['support', 'knowledge']);
-    expect(normalizePlan({ route: 'knowledge', plan: [], confidence: 1, language: 'en', reason: '', standalone_query: '' }).plan).toEqual(['knowledge']);
-    expect(normalizePlan({ route: 'blocked', plan: ['support'], confidence: 1, language: 'en', reason: '', standalone_query: '' }).plan).toEqual([]);
+    const d = { confidence: 1, language: 'en', reason: '', standalone_query: '', live_data: false };
+    expect(normalizePlan({ ...d, route: 'support', plan: ['knowledge'] }).plan).toEqual(['support', 'knowledge']);
+    expect(normalizePlan({ ...d, route: 'knowledge', plan: [] }).plan).toEqual(['knowledge']);
+    expect(normalizePlan({ ...d, route: 'blocked', plan: ['support'] }).plan).toEqual([]);
     // A two-step plan is always support → knowledge, whatever order the model used.
-    expect(normalizePlan({ route: 'knowledge', plan: ['support', 'knowledge'], confidence: 1, language: 'en', reason: '', standalone_query: '' })).toMatchObject({ route: 'support', plan: ['support', 'knowledge'] });
+    expect(normalizePlan({ ...d, route: 'knowledge', plan: ['support', 'knowledge'] })).toMatchObject({ route: 'support', plan: ['support', 'knowledge'] });
   });
 });
 
@@ -94,5 +97,47 @@ describe('composed answers', () => {
     const guidance = 'The card machine GS-1988-0001 is offline and the battery is at 64%.\n\nFollow these steps:\n1. Restart it.\n2. Switch to the 4G chip.';
     expect(composeAnswer(facts, guidance)).toBe('Your card machine GS-1988-0001 is offline. The battery is at 64%.\n\nFollow these steps:\n1. Restart it.\n2. Switch to the 4G chip.');
     expect(composeAnswer('', 'Only guidance.')).toBe('Only guidance.');
+  });
+});
+
+describe('numeric grounding of knowledge answers', () => {
+  const evidence = 'Euro comercial hoje: R$ 6,0249 na venda. Taxa de 2,99% ao mês. {"amount": 438.9, "date": "2026-10-23"}';
+
+  it('keeps amounts that the evidence contains, in either format or rounded to the answer', () => {
+    expect(redactUngroundedAmounts('O euro está a R$ 6,02 e a taxa é 2.99%; BRL 438.90 deposited; US$ 1,234.56 is not here.', evidence, '[x]').redacted).toEqual(['US$ 1,234.56']);
+  });
+
+  it('redacts an amount that no evidence contains', () => {
+    expect(redactUngroundedAmounts('A cotação do euro hoje é de R$ 5,92 na venda.', evidence, '[valor não confirmado]')).toEqual({
+      text: 'A cotação do euro hoje é de R$ [valor não confirmado] na venda.',
+      redacted: ['R$ 5,92'],
+    });
+  });
+
+  it('ignores numbers that are not money or percentages', () => {
+    expect(redactUngroundedAmounts('Restart it 3 times; serial GS-1988-0001; tomorrow 2026-10-24.', '', '[x]').redacted).toEqual([]);
+  });
+
+  it('checkOutput redacts and asks a person, for knowledge answers only', () => {
+    const base = { sources: [], toolsUsed: [], usage: { inputTokens: 0, outputTokens: 0, webSearches: 0 } };
+    expect(checkOutput('knowledge', { ...base, agent: 'knowledge', answer: 'Custa R$ 99,90 por mês.' }, 1, 'Mensalidade: R$ 49,90', 'pt')).toEqual({
+      answer: 'Custa R$ [valor não confirmado] por mês.',
+      handoffReason: 'ungrounded_answer',
+      redactedValues: ['R$ 99,90'],
+    });
+    expect(checkOutput('knowledge', { ...base, agent: 'knowledge', answer: 'Custa R$ 49,90 por mês.' }, 1, 'Mensalidade: R$ 49,90', 'pt')).toEqual({ answer: 'Custa R$ 49,90 por mês.' });
+    expect(checkOutput('support', { ...base, agent: 'support', answer: 'Custa R$ 99,90 por mês.' }, 0, '', 'pt')).toEqual({ answer: 'Custa R$ 99,90 por mês.' });
+  });
+});
+
+describe('live-data questions', () => {
+  it('the detector flags weather and exchange-rate questions, not Getnet ones', () => {
+    for (const q of ['qual o valor do euro hoje?', "What's the weather forecast in Porto Alegre tomorrow?", 'cotação do dólar', 'Vai chover amanhã em Curitiba?']) expect(looksLikeLiveData(q)).toBe(true);
+    for (const q of ['Qual a taxa do Pix?', 'Quanto custa a Get Smart?', 'Do I need a bank account to receive my sales via Pix?', 'Minha maquininha está offline.']) expect(looksLikeLiveData(q)).toBe(false);
+  });
+
+  it('live_data defaults to false in the router decision', () => {
+    const decision = RouteDecisionSchema.parse({ route: 'knowledge', plan: ['knowledge'], confidence: 0.9, language: 'en', reason: 'r', standalone_query: 'q' });
+    expect(decision.live_data).toBe(false);
   });
 });
