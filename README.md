@@ -6,10 +6,10 @@ A multi-agent API for Getnet merchants: a **Router** sends each message to a **K
 
 1. **v1** (tag [`v1-submission`](https://github.com/EduardoColissi/agents-orchestration/tree/v1-submission)) was the original submission. It received a detailed review: strong orchestration, RAG and guardrails; weak memory (1.0/10), authentication, human-in-the-loop (4.0/10) and evaluation.
 2. **v2** was rebuilt from v1 to close those gaps, with Spec-Driven Development: [`docs/spec.md`](docs/spec.md) → [`docs/plan.md`](docs/plan.md) → [`docs/tasks.md`](docs/tasks.md), written and committed before the clock. **The core was built in 39 min 41 s** (tags `v2-clock-start` → `v2-clock-end`; the first commit of the clock imports v1 and says so).
-3. **After the clock**, three verification passes produced further `fix:` commits, each declared as post-clock in [`docs/timesheet.md`](docs/timesheet.md): an independent review of the whole diff, a re-evaluation of the result against the brief and the review (same rubric), and a hands-on walk through the test plan — starting with the review's own example, "Minha maquininha está offline.", which still answered badly ([why, and what changed](#design-decisions-and-trade-offs)).
+3. **After the clock**, three verification passes produced further `fix:` commits, each declared as post-clock in [`docs/timesheet.md`](docs/timesheet.md): an independent review of the whole diff, a re-evaluation of the result against the brief and the review (same rubric), and a hands-on walk through the test plan — starting with the review's own example, "Minha maquininha está offline.", which still answered badly ([why, and what changed](#design-decisions-and-trade-offs)). One more declared change followed on 2026-10-30: a search API behind the local web search, and two prompt rules found by evaluating it ([results](#results)).
 4. This branch merges v2 into v1: both histories are preserved, the content is v2's. The companion [UI](https://github.com/EduardoColissi/agents-orchestration-UI) (merchant chat + operator console) was updated to the v2 API.
 
-The result keeps what was rated strong and closes the loops that were left open. [`docs/checklist.md`](docs/checklist.md) maps every point of the brief and of the review to where it lives and how it is proved. Video walkthrough: _link added after recording_.
+The result keeps what was rated strong and closes the loops that were left open. [`docs/checklist.md`](docs/checklist.md) maps every point of the brief and of the review to where it lives and how it is proved. Video walkthrough: to be added.
 
 ## The review questions, answered
 
@@ -238,7 +238,7 @@ The full golden set (22 cases × 3 runs at the clock end; 23 with the replanning
 
 **Deterministic checks** (judge-independent)
 
-| Check | Clock end (`v2-clock-end`) | After the re-evaluation (`be33529`) | **Final (`8f62d3f`)** |
+| Check | Clock end (`v2-clock-end`) | After the re-evaluation (`be33529`) | **Final branch (`8f62d3f`)** |
 |---|---|---|---|
 | route · plan · tools | 1.0 · 1.0 · 1.0 | 1.0 · 1.0 · 1.0 | **0.98** · 1.0 · 1.0 — one follow-up out of 69 records sent to a person by the 3B router |
 | follow-up rewrite · **no rewrite on single messages** | 1.0 · *(not checked)* | 1.0 · **1.0** | 1.0 · 1.0 |
@@ -248,6 +248,8 @@ The full golden set (22 cases × 3 runs at the clock end; 23 with the replanning
 | authorization (403 `user_mismatch`, 404 foreign conversation) · no cross-merchant data | 1.0 · 1.0 | 1.0 · 1.0 | 1.0 · 1.0 |
 | sources | 0.71 | 0.71 | 0.71 — only the two web cases: DuckDuckGo answers this network with a bot challenge. With `BRAVE_SEARCH_API_KEY` (2026-10-30) both web cases return sources: 1.0 over 3 runs ([report](eval/reports/2026-10-30T04-19-31-442Z.md)) |
 | latency p50 · p95 | 3.8 s · 19.1 s | 5.2 s · 19.1 s | 3.2 s · 25.2 s |
+
+The commits after `8f62d3f` change only the web search path (the Brave Search API behind `web_search`, and two prompt rules for general questions) and were evaluated on the two web cases ([below](#results)); the rest of the golden set was not re-run on them.
 
 **Judges** (1–5, mean over the judged records; spread in the reports)
 
@@ -339,6 +341,6 @@ src/
   support/         customer repository (mock) and tools
   rag/             crawler, chunker, embedder, vector store, retriever
 eval/              golden set, HTTP client, judge, report, runner, reports/, history/
-docs/              spec, plan, tasks, timesheet, challenge, evidence
+docs/              spec, plan, tasks, checklist, timesheet, challenge, evidence
 tests/             unit + integration (fake LLM)
 ```
