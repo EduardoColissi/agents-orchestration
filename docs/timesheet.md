@@ -35,7 +35,7 @@ Generated from `git log`. Writing the spec, plan and tasks happened before the c
 
 ## After the clock (declared)
 
-Everything below is verification and documentation, not part of the 60 minutes. Code fixes found here are separate `fix:` commits, in three passes: an independent review of the diff (13:33–14:07), a re-evaluation against the brief and the original review (15:18–16:01), and a hands-on walk through the test plan with the review's own example (16:58–19:30). The `final` branch (19:30) merges v2 into v1. One more change followed on 2026-10-30, after checking the web search by hand: a search API behind the local `web_search` tool.
+Everything below is verification and documentation, not part of the 60 minutes. Code fixes found here are separate `fix:` commits, in three passes: an independent review of the diff (13:33–14:07), a re-evaluation against the brief and the original review (15:18–16:01), and a hands-on walk through the test plan with the review's own example (16:58–19:30). The `final` branch (19:30) merges v2 into v1. One more change followed on 2026-10-30, after checking the web search by hand: a search API behind the local `web_search` tool, and two prompt fixes found by evaluating it.
 
 | Time | Commit | Message |
 |---|---|---|
@@ -68,7 +68,12 @@ Everything below is verification and documentation, not part of the 60 minutes. 
 | 19:38 | `8f62d3f` | Merge v2 into v1 (branch `final`: v1's history + v2's history, v2's content) |
 | 19:56 | `e0a559a` | docs: timeline of the build, final evaluation and a point-by-point checklist |
 | 20:04 | `9cfe80b` | docs(evidence): restart log captured on the final build |
-| 2026-10-30 | (this commit) | feat(knowledge): search the web through the Brave Search API when a key is set |
+| 10-30 00:22:57 | `6461ee9` | feat(knowledge): search the web through the Brave Search API when a key is set |
+| 10-30 00:57:13 | `6e7c99c` | docs: state what the evidence supports about the DuckDuckGo block |
+| 10-30 01:11:34 | `c3e14f5` | fix(knowledge): ask for exchange rates against the real on the local web search |
+| 10-30 01:11:34 | `dea8c5e` | fix(eval): uncommitted reports do not mark the runner as dirty |
+| 10-30 01:16:03 | `24be350` | fix(knowledge): keep the merchant's language when searching rates in reais |
+| 10-30 | (this commit) | docs: web search evidence with the Brave Search API and answers to the review questions |
 
 Verification after the clock:
 
@@ -78,4 +83,4 @@ Verification after the clock:
 - `docker compose restart api` evidence, GPU and metrics snapshots in `docs/evidence/`.
 - Hands-on walk through the test plan (16:58–19:30), starting with the review's own example: the Portuguese playbook, the offline guide searched in code, the composed support + knowledge answer, the settlement day labels and a login-limit bypass — each a `fix:` with a test (plan §14).
 - Final evaluation on the `final` branch (build `8f62d3f`, 23 × 3, fresh database): deterministic checks 1.0 except sources 0.71 (web cases blocked) and route 0.98 (one follow-up sent to a person by the 3B router); by Claude, 4/4 canaries, groundedness 4.03 · correctness 3.68 · relevance 4.19 · helpfulness 3.21 · safety 1.0, gate passed; new baseline. UI smoke 26/26 against the same build.
-- Web search checked by hand (2026-10-30): DuckDuckGo's HTML page has answered this network with a bot challenge since the first full evaluation on 2026-10-29 (bursts of identical queries from a client that identifies itself as a bot; two days earlier the same tool on v1 fetched the euro rate normally), so the two web cases had no sources in every report. The Brave Search API, which allows programmatic access, now backs `web_search` on Ollama when `BRAVE_SEARCH_API_KEY` is set; without the key the DuckDuckGo path and its declared degradation remain, and on Claude the search stays server-side.
+- Web search checked by hand (2026-10-30): DuckDuckGo's HTML page has answered this network with a bot challenge since the first full evaluation on 2026-10-29 (bursts of identical queries from a client that identifies itself as a bot; two days earlier the same tool on v1 fetched the euro rate normally), so the two web cases had no sources in every report. The Brave Search API, which allows programmatic access, now backs `web_search` on Ollama when `BRAVE_SEARCH_API_KEY` is set; without the key the DuckDuckGo path and its declared degradation remain, and on Claude the search stays server-side. With the key, the two web cases × 3 on `24be350`: route · tools · sources 1.0, Claude 4/4 on groundedness and correctness, no judge errors. The first run after the key had the 8B answering "1 EUR = 1.0000 EUR" to the English euro question: fixed in the prompt (rates against the real, answer in the merchant's language); it still answered that question in Portuguese in one run out of three.

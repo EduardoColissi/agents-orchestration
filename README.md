@@ -235,7 +235,7 @@ The full golden set (22 cases × 3 runs at the clock end; 23 with the replanning
 | HITL: approval proposed · operator resolve · outcome delivered | 0.78 · 0.92 · 0.83 | **1.0 · 1.0 · 1.0** | 1.0 · 1.0 · 1.0 |
 | handoff as expected (live-data questions do not reach the queue) | 1.0 | 1.0 | 1.0 |
 | authorization (403 `user_mismatch`, 404 foreign conversation) · no cross-merchant data | 1.0 · 1.0 | 1.0 · 1.0 | 1.0 · 1.0 |
-| sources | 0.71 | 0.71 | 0.71 — only the two web cases: DuckDuckGo answers this network with a bot challenge |
+| sources | 0.71 | 0.71 | 0.71 — only the two web cases: DuckDuckGo answers this network with a bot challenge. With `BRAVE_SEARCH_API_KEY` (2026-10-30) both web cases return sources: 1.0 over 3 runs ([report](eval/reports/2026-10-30T04-19-31-442Z.md)) |
 | latency p50 · p95 | 3.8 s · 19.1 s | 5.2 s · 19.1 s | 3.2 s · 25.2 s |
 
 **Judges** (1–5, mean over the judged records; spread in the reports)
@@ -257,6 +257,8 @@ How to read it:
 - Operator-written replies are checked deterministically but not judged (they are a person's text, not the system's output).
 
 Reports: clock end [qwen](eval/reports/2026-10-29T16-37-18-256Z.md) / [Claude](eval/reports/2026-10-29T16-56-11-834Z.md) (its gate failure was the cross-judge comparison fixed in `0f872f7`) · after the re-evaluation [qwen](eval/reports/2026-10-29T18-56-50-574Z.md) / [Claude](eval/reports/2026-10-29T19-00-39-798Z.md) · final [qwen](eval/reports/2026-10-29T22-48-31-737Z.md) / [Claude = baseline](eval/reports/2026-10-29T22-54-20-265Z.md). Operational metrics from the final run's database: [`docs/evidence/metrics.json`](docs/evidence/metrics.json) (the escalation rate, 0.24, is by design: a quarter of the golden set exercises the human queue).
+
+Web search with the Brave Search API (2026-10-30, the two web cases × 3, judged by Claude): the first run after the key ([report](eval/reports/2026-10-30T04-05-57-326Z.md)) showed the search working and the 8B answering the English euro question with "1 EUR = 1.0000 EUR" (helpfulness 1) — it searched without a target currency and copied a converter snippet. Two prompt rules later (rates against the real, answer in the merchant's language) the same cases on build `24be350` ([report](eval/reports/2026-10-30T04-19-31-442Z.md)) give "1 EUR = 6.02 BRL" and a 16–23 °C forecast with sources, groundedness and correctness 4 on all six records; the 8B still answered the English question in Portuguese in one run out of three.
 
 The development runs inside the clock ([`eval/reports/2026-10-29T16-1*`, `16-2*`](eval/reports)) found real model behaviours that unit tests with a fake LLM cannot: the 3B router labelling English as Portuguese, the 8B inventing a ticket number, wrapping or misnaming the serial of the gated tool, and proposing a replacement for a connectivity problem. Each became a fix with a test (plan §14). An independent re-evaluation after the clock found the router copying its own example — fixed and now checked on every single-turn case. v1's real run (Claude, 15/15 lexical) is in [`eval/history/`](eval/history).
 
