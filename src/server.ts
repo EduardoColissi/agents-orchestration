@@ -40,7 +40,7 @@ export async function buildServer(deps: AppDeps): Promise<FastifyInstance> {
     const ok = Object.values(checks).every((c) => c.ok);
     return reply.code(ok ? 200 : 503).send({ status: ok ? 'ready' : 'not_ready', checks });
   });
-  app.get('/health', async () => ({ status: 'ok', version: deps.config.GIT_SHA, knowledge_base_chunks: deps.knowledgeBaseSize, provider: deps.config.LLM_PROVIDER, models }));
+  app.get('/health', async () => ({ status: 'ok', version: deps.config.GIT_SHA, knowledge_base_chunks: deps.knowledgeBaseSize, provider: deps.config.LLM_PROVIDER, models, web_search: deps.webSearchProvider }));
 
   // Demo identity provider (spec §3): in production this is the company's OIDC provider.
   // Limited per client IP + username (after the body is parsed): a UI server logging many users in

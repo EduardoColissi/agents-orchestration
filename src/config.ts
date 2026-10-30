@@ -27,6 +27,8 @@ const ConfigSchema = z.object({
   PERSONALITY_ENABLED: z.stringbool().default(false),
   PERSONALITY_MODEL: z.string().default('claude-haiku-5-5'),
   WEB_SEARCH_MAX_USES: z.coerce.number().int().min(0).max(5).default(2),
+  /** Web search on the local provider: Brave Search API key (free plan). Unset = DuckDuckGo HTML, which some networks block. */
+  BRAVE_SEARCH_API_KEY: z.string().optional(),
   ROUTER_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
   AGENT_MAX_ITERATIONS: z.coerce.number().int().min(1).max(10).default(5),
 

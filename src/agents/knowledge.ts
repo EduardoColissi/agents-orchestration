@@ -3,7 +3,7 @@ import type { Agent, AgentContext, AgentResult } from '../types.js';
 import { localDate } from '../support/dates.js';
 import { knowledgePrompt } from './prompts.js';
 import { dedupeSources, runToolLoop, type AgentTool } from './toolLoop.js';
-import { createWebSearchTool } from './webSearchTool.js';
+import { createWebSearchTool, type WebSearch } from './webSearchTool.js';
 import { reportsOfflineTerminal } from '../orchestration/replanner.js';
 import { maskPII } from '../guardrails/pii.js';
 import type { Source, ToolEvidence } from '../types.js';
@@ -28,6 +28,8 @@ ${ctx.message}
 export interface KnowledgeAgentOptions {
   model: string;
   webSearchMaxUses: number;
+  /** Client-side search for providers without server-side search (default: DuckDuckGo HTML). */
+  webSearch?: WebSearch;
   maxIterations: number;
   now?: () => Date;
 }
@@ -53,7 +55,7 @@ export class KnowledgeAgent implements Agent {
       ? `${withConversation(ctx)}\n\n<account_findings agent="support">\n${previous.map((p) => p.answer).join('\n\n')}\n</account_findings>${excerpts}`
       : withConversation(ctx);
 
-    // Providers without server-side search (Ollama) get a local DuckDuckGo tool instead.
+    // Providers without server-side search (Ollama) get a client-side tool instead (Brave with a key, DuckDuckGo HTML without).
     const serverSearch = this.llm.capabilities.serverWebSearch;
     const run = (webSearchAvailable: boolean) =>
       runToolLoop({
@@ -61,7 +63,7 @@ export class KnowledgeAgent implements Agent {
         model: this.options.model,
         system: knowledgePrompt({ today: localDate(now), language: ctx.language, hasPreviousContext: previous.length > 0, webSearchAvailable }),
         userMessage,
-        tools: [this.knowledgeBaseTool, ...(webSearchAvailable && !serverSearch ? [createWebSearchTool(undefined, this.options.webSearchMaxUses)] : [])],
+        tools: [this.knowledgeBaseTool, ...(webSearchAvailable && !serverSearch ? [createWebSearchTool(this.options.webSearch, this.options.webSearchMaxUses)] : [])],
         ...(webSearchAvailable && serverSearch ? { webSearch: { maxUses: this.options.webSearchMaxUses } } : {}),
         maxIterations: this.options.maxIterations,
         maxTokens: 1200,

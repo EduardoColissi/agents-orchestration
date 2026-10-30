@@ -35,7 +35,7 @@ Generated from `git log`. Writing the spec, plan and tasks happened before the c
 
 ## After the clock (declared)
 
-Everything below is verification and documentation, not part of the 60 minutes. Code fixes found here are separate `fix:` commits, in three passes: an independent review of the diff (13:33–14:07), a re-evaluation against the brief and the original review (15:18–16:01), and a hands-on walk through the test plan with the review's own example (16:58–19:30). The `final` branch (19:30) merges v2 into v1.
+Everything below is verification and documentation, not part of the 60 minutes. Code fixes found here are separate `fix:` commits, in three passes: an independent review of the diff (13:33–14:07), a re-evaluation against the brief and the original review (15:18–16:01), and a hands-on walk through the test plan with the review's own example (16:58–19:30). The `final` branch (19:30) merges v2 into v1. One more change followed on 2026-10-30, after checking the web search by hand: a search API behind the local `web_search` tool.
 
 | Time | Commit | Message |
 |---|---|---|
@@ -66,7 +66,9 @@ Everything below is verification and documentation, not part of the 60 minutes. 
 | 19:01:59 | `1dd9c26` | fix: drop restated facts from the guidance and summarize settlements in code |
 | 19:30:01 | `c24d56a` | docs(plan): record the fixes found by walking through the test plan |
 | 19:38 | `8f62d3f` | Merge v2 into v1 (branch `final`: v1's history + v2's history, v2's content) |
-| — | (this commit) | docs: timeline, final evaluation and timesheet |
+| 19:56 | `e0a559a` | docs: timeline of the build, final evaluation and a point-by-point checklist |
+| 20:04 | `9cfe80b` | docs(evidence): restart log captured on the final build |
+| 2026-10-30 | (this commit) | feat(knowledge): search the web through the Brave Search API when a key is set |
 
 Verification after the clock:
 
@@ -76,3 +78,4 @@ Verification after the clock:
 - `docker compose restart api` evidence, GPU and metrics snapshots in `docs/evidence/`.
 - Hands-on walk through the test plan (16:58–19:30), starting with the review's own example: the Portuguese playbook, the offline guide searched in code, the composed support + knowledge answer, the settlement day labels and a login-limit bypass — each a `fix:` with a test (plan §14).
 - Final evaluation on the `final` branch (build `8f62d3f`, 23 × 3, fresh database): deterministic checks 1.0 except sources 0.71 (web cases blocked) and route 0.98 (one follow-up sent to a person by the 3B router); by Claude, 4/4 canaries, groundedness 4.03 · correctness 3.68 · relevance 4.19 · helpfulness 3.21 · safety 1.0, gate passed; new baseline. UI smoke 26/26 against the same build.
+- Web search checked by hand (2026-10-30): DuckDuckGo's HTML page answers this network with a bot challenge from the first request (the tool identifies itself as a bot; volume is not the cause). The Brave Search API, which allows programmatic access, now backs `web_search` on Ollama when `BRAVE_SEARCH_API_KEY` is set; without the key the DuckDuckGo path and its declared degradation remain, and on Claude the search stays server-side.

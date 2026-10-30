@@ -21,4 +21,4 @@ const sweeper = setInterval(() => void deps.hitl.tick(), config.SWEEP_INTERVAL_M
 sweeper.unref();
 
 await app.listen({ port: config.PORT, host: config.HOST });
-deps.logger.info({ port: config.PORT, provider: config.LLM_PROVIDER, router_model: config.LLM_PROVIDER === 'ollama' ? config.OLLAMA_ROUTER_MODEL : config.ROUTER_MODEL, agent_model: config.LLM_PROVIDER === 'ollama' ? config.OLLAMA_AGENT_MODEL : config.AGENT_MODEL, kb_chunks: deps.knowledgeBaseSize }, 'server ready');
+deps.logger.info({ port: config.PORT, provider: config.LLM_PROVIDER, router_model: config.LLM_PROVIDER === 'ollama' ? config.OLLAMA_ROUTER_MODEL : config.ROUTER_MODEL, agent_model: config.LLM_PROVIDER === 'ollama' ? config.OLLAMA_AGENT_MODEL : config.AGENT_MODEL, kb_chunks: deps.knowledgeBaseSize, web_search: deps.webSearchProvider }, 'server ready');

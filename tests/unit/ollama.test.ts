@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { OllamaClient, extractJsonObject } from '../../src/llm/ollama.js';
 import { runToolLoop, type AgentTool } from '../../src/agents/toolLoop.js';
-import { parseDuckDuckGo, createWebSearchTool } from '../../src/agents/webSearchTool.js';
+import { parseDuckDuckGo, createWebSearchTool, searchBrave, selectWebSearch } from '../../src/agents/webSearchTool.js';
 
 function fetchStub(responses: unknown[]) {
   const sent: Array<{ url: string; body: Record<string, unknown> }> = [];
@@ -103,6 +103,48 @@ describe('local web search tool', () => {
     expect(out.sources?.[0]).toEqual({ title: 'Cotação do euro hoje', url: 'https://example.com/cambio' });
     expect((await tool.execute({ query: 'again' })).isError).toBe(true);
   });
+
+describe('Brave Search', () => {
+  const braveStub = (status: number, body: unknown) => {
+    const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+    const impl = (async (url: string | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), headers: init?.headers as Record<string, string> });
+      return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    return { impl, calls };
+  };
+
+  it('sends the key, asks for Brazilian results and returns plain-text hits', async () => {
+    const { impl, calls } = braveStub(200, {
+      web: {
+        results: [
+          { title: 'Cotação do <strong>euro</strong> hoje', url: 'https://example.com/cambio', description: 'Euro a R$&nbsp;6,20 &amp; subindo' },
+          { title: 'B', url: 'https://b.com/' },
+        ],
+      },
+    });
+    expect(await searchBrave('euro hoje', 'BSA-test', impl)).toEqual([
+      { title: 'Cotação do euro hoje', url: 'https://example.com/cambio', snippet: 'Euro a R$ 6,20 & subindo' },
+      { title: 'B', url: 'https://b.com/', snippet: '' },
+    ]);
+    const url = new URL(calls[0]!.url);
+    expect(url.origin + url.pathname).toBe('https://api.search.brave.com/res/v1/web/search');
+    expect(url.searchParams.get('q')).toBe('euro hoje');
+    expect(url.searchParams.get('country')).toBe('BR');
+    expect(calls[0]!.headers['x-subscription-token']).toBe('BSA-test');
+  });
+
+  it('reports a rate limit as unavailable live data and a bad key clearly', async () => {
+    await expect(searchBrave('euro', 'k', braveStub(429, {}).impl)).rejects.toThrow(/live web data is unavailable/);
+    await expect(searchBrave('euro', 'k', braveStub(401, {}).impl)).rejects.toThrow(/rejected the API key/);
+  });
+
+  it('is selected only when a key is configured', () => {
+    expect(selectWebSearch('BSA-test').name).toBe('brave');
+    expect(selectWebSearch(undefined).name).toBe('duckduckgo');
+    expect(selectWebSearch('').name).toBe('duckduckgo');
+  });
+});
 
 describe('web search provider blocking', () => {
   it('reports a bot challenge as unavailable, not as an empty result', async () => {

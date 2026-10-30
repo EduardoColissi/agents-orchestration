@@ -55,6 +55,7 @@ Everything is optional and listed in [`.env.example`](.env.example) (read from `
 | `AUTH_JWT_SECRET` · `AUTH_TOKEN_TTL_S` | generated once in the data volume · `3600` | token signing key and lifetime |
 | `HANDOFF_TTL_MINUTES` · `CHAT_RATE_LIMIT_PER_MIN` | `240` · `20` | approval expiry · chat turns per merchant per minute |
 | `PERSONALITY_ENABLED` · `EMBEDDER` | `false` · `e5` | brand-voice stage · `hashing` = offline embeddings |
+| `BRAVE_SEARCH_API_KEY` | — | web search on the local provider (Brave Search API, free plan); unset = DuckDuckGo HTML, which some networks block |
 | `JUDGE_PROVIDER` · `JUDGE_MODEL` | `ollama` · `qwen2.5:7b` | evaluation judge (`anthropic` → `claude-sonnet-5-5`) |
 | `COMPOSE_FILE` · `API_BIND` · `COMPOSE_OLLAMA_URL` | — · `127.0.0.1` · `http://ollama:11434` | Docker Compose only |
 
@@ -107,7 +108,7 @@ npm run ingest             # optional: rebuild data/index.json from the web
 ### Tests and evaluation
 
 ```bash
-npm test                   # 162 tests, offline, scripted fake LLM, SQLite in memory (Node >= 24)
+npm test                   # 165 tests, offline, scripted fake LLM, SQLite in memory (Node >= 24)
 npm run typecheck
 npm run eval -- --runs 3   # semantic evaluation of the running API (EVAL_BASE_URL, default localhost:3000)
 npm run eval -- --runs 1 --only 3,5,MT1,R1,H2   # a few cases (partial runs skip the baseline gate)
@@ -184,7 +185,7 @@ flowchart TD
 - **Router**: no tool loop, one call constrained to the `route_decision` schema (Ollama `format` = JSON Schema; a forced tool on Claude). The output is validated with zod; anything invalid becomes an escalation.
 - **Specialists**: a bounded tool loop (`AGENT_MAX_ITERATIONS`, default 5). The model calls tools, reads the results and answers; the last iteration offers no tools, so it has to answer. Tool inputs are zod schemas (also sent as JSON Schema to the model); invalid input comes back to the model as an error to correct, and the Ollama adapter coerces arguments that small models send as strings.
 - **Support tools** are built per request with the authenticated merchant bound by closure — `get_customer_profile`, `get_settlements`, `get_transactions`, `get_terminal_status`, `create_support_ticket` and the approval-gated `request_terminal_replacement` — so the model cannot choose whose data it reads. Their outputs do the work small models get wrong: decline codes come with meaning and action, and each settlement comes with its weekday and "today/tomorrow/yesterday" computed in code.
-- **Knowledge tools**: `search_knowledge_base` (RAG as a tool: the agent may search again with other words, up to 3 times) and `web_search` (server-side on Claude; a DuckDuckGo tool on Ollama). When Support's diagnostics show an offline machine, the troubleshooting guide is also searched in code and handed to the agent as excerpts (traced as a RAG span like any other search).
+- **Knowledge tools**: `search_knowledge_base` (RAG as a tool: the agent may search again with other words, up to 3 times) and `web_search` (server-side on Claude; on Ollama a client-side tool backed by the Brave Search API when `BRAVE_SEARCH_API_KEY` is set, by DuckDuckGo HTML otherwise — `/health` says which). When Support's diagnostics show an offline machine, the troubleshooting guide is also searched in code and handed to the agent as excerpts (traced as a RAG span like any other search).
 - **Gated tool**: the loop stops before running `request_terminal_replacement` and returns a checkpoint (see Human-in-the-loop).
 - **Evidence**: every tool call is recorded with its input, masked output, duration and error flag — the operator reads it, the judge scores against it, and it becomes a span.
 
@@ -299,7 +300,7 @@ PII (cards with Luhn, CPF, CNPJ, e-mail) masked before logs, LLM and storage · 
 ## Limitations and next steps
 
 - Demo identity provider (passwords in this README); production = OIDC/JWKS, refresh and revocation.
-- The local web search (DuckDuckGo HTML) is blocked by a bot challenge on some networks — the tool then reports live data as unavailable; with `LLM_PROVIDER=anthropic` the search runs server-side. A search API (Brave, Tavily) behind the same tool is the fix.
+- Without `BRAVE_SEARCH_API_KEY`, the local web search scrapes DuckDuckGo HTML, which some networks answer with a bot challenge — the tool then reports live data as unavailable and the agent says so instead of guessing. The Brave Search API (free plan) behind the same tool is the production path on Ollama; with `LLM_PROVIDER=anthropic` the search runs server-side.
 - A handoff whose delivery fails 5 times stays in `resuming` and needs manual action (no retry endpoint yet).
 - Replacement intent is a heuristic (regex) in front of the operator gate; a structured `intent` from the Router would be more precise.
 - The 3B/8B models are slower and weaker than Claude; on CPU a turn takes 20–60 s.

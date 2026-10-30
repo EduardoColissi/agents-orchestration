@@ -8,6 +8,8 @@ export interface WebSearchHit extends Source {
   snippet: string;
 }
 
+export type WebSearch = (query: string) => Promise<WebSearchHit[]>;
+
 /** DuckDuckGo HTML endpoint: no API key, good enough for weather/exchange-rate questions. */
 export async function searchDuckDuckGo(query: string, fetchImpl: typeof fetch = fetch, limit = 5): Promise<WebSearchHit[]> {
   const res = await fetchImpl(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
@@ -45,11 +47,44 @@ function decodeRedirect(href: string): string {
   }
 }
 
+const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
+const BraveResponse = z.object({
+  web: z.object({ results: z.array(z.object({ title: z.string(), url: z.string(), description: z.string().optional() })) }).optional(),
+});
+
+/**
+ * Brave Search API (api-dashboard.search.brave.com, free plan): a provider that allows programmatic
+ * access, unlike DuckDuckGo's HTML page. Used when BRAVE_SEARCH_API_KEY is set.
+ */
+export async function searchBrave(query: string, apiKey: string, fetchImpl: typeof fetch = fetch, limit = 5): Promise<WebSearchHit[]> {
+  const params = new URLSearchParams({ q: query, count: String(limit), country: 'BR', text_decorations: 'false' });
+  const res = await fetchImpl(`${BRAVE_SEARCH_URL}?${params}`, {
+    headers: { accept: 'application/json', 'x-subscription-token': apiKey },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (res.status === 401 || res.status === 403) throw new Error(`Brave Search rejected the API key (HTTP ${res.status})`);
+  if (res.status === 429) throw new Error('Brave Search rate limit reached; live web data is unavailable');
+  if (!res.ok) throw new Error(`Brave Search ${res.status}`);
+  const parsed = BraveResponse.safeParse(await res.json());
+  if (!parsed.success) throw new Error('Brave Search returned an unexpected payload');
+  return (parsed.data.web?.results ?? []).slice(0, limit).map((r) => ({ title: plainText(r.title), url: r.url, snippet: plainText(r.description ?? '') }));
+}
+
+/** Brave may mark query terms with <strong> and escapes entities; the agent gets plain text. */
+function plainText(text: string): string {
+  return cheerio.load(text).text().replace(/\s+/g, ' ').trim();
+}
+
+/** The search behind `web_search` on providers without server-side search: Brave with a key, DuckDuckGo HTML without one. */
+export function selectWebSearch(braveApiKey: string | undefined): { name: 'brave' | 'duckduckgo'; search: WebSearch } {
+  return braveApiKey ? { name: 'brave', search: (q) => searchBrave(q, braveApiKey) } : { name: 'duckduckgo', search: searchDuckDuckGo };
+}
+
 /**
  * Client-side replacement for Anthropic's server web search, used when the LLM provider
  * has no native search (Ollama). Same tool name, so `tools_used` stays comparable.
  */
-export function createWebSearchTool(search: (q: string) => Promise<WebSearchHit[]> = searchDuckDuckGo, maxUses = 2): AgentTool {
+export function createWebSearchTool(search: WebSearch = searchDuckDuckGo, maxUses = 2): AgentTool {
   let uses = 0;
   return defineTool(
     'web_search',

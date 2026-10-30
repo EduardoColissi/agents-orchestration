@@ -4,6 +4,7 @@ import { AnthropicClient } from './llm/anthropic.js';
 import { OllamaClient } from './llm/ollama.js';
 import { RouterAgent } from './agents/router.js';
 import { KnowledgeAgent } from './agents/knowledge.js';
+import { selectWebSearch } from './agents/webSearchTool.js';
 import { SupportAgent } from './agents/support.js';
 import { EscalationAgent } from './agents/escalation.js';
 import { PersonalityStage } from './agents/personality.js';
@@ -31,6 +32,8 @@ export interface AppDeps {
   orchestrator: Orchestrator;
   logger: Logger;
   knowledgeBaseSize: number;
+  /** What backs the Knowledge agent's `web_search` tool (GET /health). */
+  webSearchProvider: 'server-side' | 'brave' | 'duckduckgo';
   db: Db;
   audit: AuditLog;
   jwt: JwtService;
@@ -92,12 +95,17 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
   });
   if (retriever.isEmpty) logger.warn({ index: config.INDEX_PATH }, 'knowledge base is empty — run `npm run ingest`');
 
+  const webSearch = selectWebSearch(config.BRAVE_SEARCH_API_KEY || undefined);
+  // Claude searches server-side with its native tool; the client-side search only exists for providers without one.
+  const webSearchProvider = llm.capabilities.serverWebSearch ? ('server-side' as const) : webSearch.name;
+
   const orchestrator = new Orchestrator({
     router: new RouterAgent(llm, model('router', config.ROUTER_MODEL)),
     agents: {
       knowledge: new KnowledgeAgent(llm, createKnowledgeBaseTool(retriever), {
         model: model('agent', config.AGENT_MODEL),
         webSearchMaxUses: config.WEB_SEARCH_MAX_USES,
+        webSearch: webSearch.search,
         maxIterations: config.AGENT_MAX_ITERATIONS,
         ...(opts.now ? { now: opts.now } : {}),
       }),
@@ -134,7 +142,7 @@ export function buildDependencies(opts: BuildOptions): AppDeps {
     return { database, knowledge_base: { ok: store.size > 0, detail: `${store.size} chunks` }, llm: await llmReadiness(config, !!opts.llm) };
   };
 
-  return { config, orchestrator, logger, knowledgeBaseSize: store.size, db, audit, jwt, credentials, conversations, chat, handoffs, hitl, spans, now, readiness };
+  return { config, orchestrator, logger, knowledgeBaseSize: store.size, webSearchProvider, db, audit, jwt, credentials, conversations, chat, handoffs, hitl, spans, now, readiness };
 }
 
 async function llmReadiness(config: Config, injected: boolean): Promise<{ ok: boolean; detail?: string }> {
