@@ -71,7 +71,9 @@ export class Judge {
       tools: [{ name: 'record_scores', description: 'Record the evaluation scores.', inputSchema: SCORES_JSON_SCHEMA }],
       forceTool: 'record_scores',
       temperature: 0,
-      maxTokens: 400,
+      // Room for the rationale: at 400 the reference judge's JSON was cut before `rationale`/`helpfulness`
+      // on long web answers, which the parser then rejected (5 of 9 records in one partial run).
+      maxTokens: 1000,
     });
     // Providers that cannot force the tool may answer with the JSON as text.
     return parseScores(response.toolCalls.find((c) => c.name === 'record_scores')?.input ?? extractJsonObject(response.text));
