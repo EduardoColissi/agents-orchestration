@@ -155,7 +155,8 @@ async function runCase(c: GoldenCase, run: number): Promise<RunRecord> {
 function runnerVersion(): { git_sha: string; dirty: boolean } {
   try {
     const sha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
-    const dirty = execFileSync('git', ['status', '--porcelain', '--', 'src', 'eval'], { encoding: 'utf8' }).trim().length > 0;
+    // Modified runner or system code; a report left uncommitted under eval/reports is not a dirty runner.
+    const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=no', '--', 'src', 'eval'], { encoding: 'utf8' }).trim().length > 0;
     return { git_sha: sha, dirty };
   } catch {
     return { git_sha: 'unknown', dirty: false };
