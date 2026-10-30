@@ -4,7 +4,7 @@ import { luhnValid, maskPII } from '../../src/guardrails/pii.js';
 import { detectLanguage } from '../../src/guardrails/language.js';
 import { normalizePlan, RouteDecisionSchema } from '../../src/agents/router.js';
 import { checkOutput, redactUngroundedAmounts } from '../../src/guardrails/output.js';
-import { looksLikeLiveData } from '../../src/orchestration/liveData.js';
+import { liveDataQuery, looksLikeLiveData } from '../../src/orchestration/liveData.js';
 import { composeAnswer, normalizeLanguage, withoutTicketTalk } from '../../src/orchestrator.js';
 
 describe('maskPII', () => {
@@ -134,6 +134,13 @@ describe('live-data questions', () => {
   it('the detector flags weather and exchange-rate questions, not Getnet ones', () => {
     for (const q of ['qual o valor do euro hoje?', "What's the weather forecast in Porto Alegre tomorrow?", 'cotação do dólar', 'Vai chover amanhã em Curitiba?']) expect(looksLikeLiveData(q)).toBe(true);
     for (const q of ['Qual a taxa do Pix?', 'Quanto custa a Get Smart?', 'Do I need a bank account to receive my sales via Pix?', 'Minha maquininha está offline.']) expect(looksLikeLiveData(q)).toBe(false);
+  });
+
+  it('asks exchange rates in Portuguese against the real and leaves other questions as they are', () => {
+    expect(liveDataQuery('whats the euro exchange rate today?')).toBe('cotação do euro hoje em reais');
+    expect(liveDataQuery('qual o valor do dólar hoje?')).toBe('cotação do dólar hoje em reais');
+    expect(liveDataQuery('Qual a cotação do iene?')).toBe('cotação do iene hoje em reais');
+    expect(liveDataQuery("What's the weather forecast in Porto Alegre tomorrow?")).toBe("What's the weather forecast in Porto Alegre tomorrow?");
   });
 
   it('live_data defaults to false in the router decision', () => {

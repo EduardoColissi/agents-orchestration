@@ -271,7 +271,8 @@ describe('POST /chat — guardrails, handoff and failure modes', () => {
     expect(knowledgeCall.webSearch).toBeUndefined();
     // The search already ran in code with the merchant's question; the knowledge base is not offered.
     expect(knowledgeCall.tools!.map((t) => t.name)).toEqual(['web_search']);
-    expect(String(knowledgeCall.messages[0]!.content)).toContain('<web_search_results query="What\'s the euro exchange rate today?">');
+    // An exchange rate is searched in Portuguese against the real, whatever the merchant's language.
+    expect(String(knowledgeCall.messages[0]!.content)).toContain('<web_search_results query="cotação do euro hoje em reais">');
     expect(body.tools_used).toEqual(['web_search']);
     expect(body.sources).toEqual([{ title: 'Euro hoje — Câmbio Exemplo', url: 'https://cambio.example/euro' }]);
     expect(body.answer).toBe('Euro is around R$ 6,20 today.');

@@ -5,6 +5,7 @@ import { knowledgePrompt } from './prompts.js';
 import { dedupeSources, runToolLoop, type AgentTool } from './toolLoop.js';
 import { createWebSearchTool, type WebSearch } from './webSearchTool.js';
 import { reportsOfflineTerminal } from '../orchestration/replanner.js';
+import { liveDataQuery } from '../orchestration/liveData.js';
 import { maskPII } from '../guardrails/pii.js';
 import type { Source, ToolEvidence } from '../types.js';
 
@@ -67,9 +68,10 @@ export class KnowledgeAgent implements Agent {
     // the euro rate inside a conversation, it searched the knowledge base and then invented a value.
     // The model keeps the rest of the budget to refine the query and never sees the knowledge base tool.
     const liveData = ctx.liveData === true && budget > 0;
-    const live = liveData && webTool ? await this.call(webTool, 'web_search', ctx.query) : null;
+    const liveQuery = liveDataQuery(ctx.query);
+    const live = liveData && webTool ? await this.call(webTool, 'web_search', liveQuery) : null;
     const liveBlocked = live !== null && live.evidence.isError;
-    const webResults = live && !liveBlocked ? `\n\n<web_search_results query="${ctx.query}">\n${live.content}\n</web_search_results>` : '';
+    const webResults = live && !liveBlocked ? `\n\n<web_search_results query="${liveQuery}">\n${live.content}\n</web_search_results>` : '';
     const userMessage = `${previous.length
       ? `${withConversation(ctx)}\n\n<account_findings agent="support">\n${previous.map((p) => p.answer).join('\n\n')}\n</account_findings>${excerpts}`
       : withConversation(ctx)}${webResults}`;
